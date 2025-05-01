@@ -43,13 +43,31 @@ clear; % Clear Workspace memory
 clc; % Clear Command Window
 close all; % Close all figures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Check for Available Signals
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Node String Array
+nodeList = {'FP1-F7', 'F7-T7', 'T7-P7', 'P7-O1', 'FP1-F3', 'F3-C3', 'C3-P3', 'P3-O1', 'FP2-F4', 'F4-C4', 'C4-P4', 'P4-O2','FP2-F8', 'F8-T8', 'T8-P8', 'P8-O2', 'FZ-CZ', 'CZ-PZ','P7-T7', 'T7-FT9', 'FT9-FT10', 'FT10-T8', 'T8-P8'};
+
+% Gather Document Details
+documentInfo = edfinfo('chb01_01.edf');
+availableSignals = documentInfo.SignalLabels;
+
+% Check which requested channels are available
+isAvailable = ismember(nodeList, availableSignals);
+
+% Display Missing Channels
+if ~all(isAvailable)
+    missing = nodeList(~isAvailable);
+    fprintf('Missing channels in %s:\n', 'chb01_01.edf');
+    disp(missing);
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Collect EEG Data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-documentInfo = edfinfo('chb01_01.edf');
-documentData = edfread("chb01_01.edf");
-fp1_f7_Data = edfread('chb01_01.edf', 'SelectedSignals', 'FP1-F7');
-fp1_f7_cellArr = table2array(fp1_f7_Data);
-fp1_f7_Arr = vertcat(fp1_f7_cellArr{:});
+multiChannelMatrix = edfread('chb01_01.edf', 'SelectedSignals', nodeList);
+multiChannelCellArr = table2array(multiChannelMatrix);
+signalMatrix = cellfun(@vertcat, multiChannelCellArr, 'UniformOutput', false);
+signalMatrix = cell2mat(signalMatrix');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Process EEG Data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -61,33 +79,30 @@ endRange = 257;
 t = (0:255);
 
 % Node File Size
-arraySize = length(fp1_f7_Arr);
-fullFile = floor(arraySize) - 1; % Used to complete a full window, provides an integer
-numberofWindows = floor(arraySize / samples);
+numberOfWindows = floor(size(signalMatrix, 1) / samples);
+numberOfChannels = size(signalMatrix, 2);
 
 % Create a matrix
-matrixSize = samples * numberofWindows;
-FP1_F7 = zeros(samples,numberofWindows);
+windowedEEG = zeros(samples,numberOfWindows,numberOfChannels);
 
 % Loop though array
-for i = 1 : numberofWindows
+for i = 1:numberOfChannels
+    for j = 1:numberOfWindows
 
-    % Interval Information
-    startIndex = (i-1) * samples + 1;
-    endIndex = i * samples;
+        % Interval Information
+        startIndex = (j-1) * samples + 1;
+        endIndex = j * samples;
     
-    % Insert data into the array
-    FP1_F7(:,i) = fp1_f7_Arr(startIndex:endIndex);
-
+        % Insert data into the array
+        windowedEEG(:,j,i) = signalMatrix(startIndex:endIndex, i);
+    end
 end
 
 % Plot Test
-for i=1:5
-    figure
-    plot(t, FP1_F7(:, i)); % Only plot the current window  
-    title(sprintf('Window %d', i));
-    xlabel('Samples (0–255)');
-    ylabel('EEG Amplitude (\muV)'); % Assuming units are microvolts
-    pause(0.1); % Optional: slow down loop so you can see the plot  
-end
+channelIndex = 1;
+windowIndex = 10;
+plot(windowedEEG(:, windowIndex, channelIndex));
+xlabel('Sample (1–256)');
+ylabel('EEG Amplitude');
+title(sprintf('Channel %d, Window %d', channelIndex, windowIndex));
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
