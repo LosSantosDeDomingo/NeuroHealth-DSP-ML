@@ -35,7 +35,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version: 1
 % Data Created: 04/26/2025
-% Last Revision: 04/30/2025
+% Last Revision: 05/07/2025
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Clear Workspace, Command Window, and Figures 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -43,66 +43,156 @@ clear; % Clear Workspace memory
 clc; % Clear Command Window
 close all; % Close all figures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Check for Available Signals
+% EEG Processing Code
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Node String Array
-nodeList = {'FP1-F7', 'F7-T7', 'T7-P7', 'P7-O1', 'FP1-F3', 'F3-C3', 'C3-P3', 'P3-O1', 'FP2-F4', 'F4-C4', 'C4-P4', 'P4-O2','FP2-F8', 'F8-T8', 'T8-P8', 'P8-O2', 'FZ-CZ', 'CZ-PZ','P7-T7', 'T7-FT9', 'FT9-FT10', 'FT10-T8', 'T8-P8'};
+% Specify folder location
+myFolder = 'D:\chb-mit-scalp-eeg-database-1.0.0\chb-mit-scalp-eeg-database-1.0.0';
 
-% Gather Document Details
-documentInfo = edfinfo('chb01_01.edf');
-availableSignals = documentInfo.SignalLabels;
+% Node List
+nodeList = {'FP1-F7', 'F7-T7', 'T7-P7', 'P7-O1', 'FP1-F3', 'F3-C3', 'C3-P3', ...
+            'P3-O1', 'FP2-F4', 'F4-C4', 'C4-P4', 'P4-O2', 'FP2-F8', 'F8-T8', ...
+            'T8-P8', 'P8-O2', 'FZ-CZ', 'CZ-PZ', 'P7-T7', 'T7-FT9', ...
+            'FT9-FT10', 'FT10-T8', 'T8-P8'};
 
-% Check which requested channels are available
-isAvailable = ismember(nodeList, availableSignals);
-
-% Display Missing Channels
-if ~all(isAvailable)
-    missing = nodeList(~isAvailable);
-    fprintf('Missing channels in %s:\n', 'chb01_01.edf');
-    disp(missing);
-end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Collect EEG Data
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-multiChannelMatrix = edfread('chb01_01.edf', 'SelectedSignals', nodeList);
-multiChannelCellArr = table2array(multiChannelMatrix);
-signalMatrix = cellfun(@vertcat, multiChannelCellArr, 'UniformOutput', false);
-signalMatrix = cell2mat(signalMatrix');
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Process EEG Data
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Basic Interval Information
-samples = 256;
-sampleRate = 1/samples;
-beginRange = 1;
-endRange = 257;
-t = (0:255);
-
-% Node File Size
-numberOfWindows = floor(size(signalMatrix, 1) / samples);
-numberOfChannels = size(signalMatrix, 2);
-
-% Create a matrix
-windowedEEG = zeros(samples,numberOfWindows,numberOfChannels);
-
-% Loop though array
-for i = 1:numberOfChannels
-    for j = 1:numberOfWindows
-
-        % Interval Information
-        startIndex = (j-1) * samples + 1;
-        endIndex = j * samples;
-    
-        % Insert data into the array
-        windowedEEG(:,j,i) = signalMatrix(startIndex:endIndex, i);
+% Validate folder
+if ~isfolder(myFolder)
+    errorMessage = sprintf('Error: The following folder does not exist:\n%s\nPlease specify a new folder.', myFolder);
+    uiwait(warndlg(errorMessage));
+    myFolder = uigetdir();
+    if myFolder == 0
+        return;
     end
 end
 
-% Plot Test
-channelIndex = 1;
-windowIndex = 10;
-plot(windowedEEG(:, windowIndex, channelIndex));
-xlabel('Sample (1–256)');
-ylabel('EEG Amplitude');
-title(sprintf('Channel %d, Window %d', channelIndex, windowIndex));
+% Get a list of all desired file names within the folder
+filePattern = fullfile(myFolder, '**/*.edf');
+desiredFiles = dir(filePattern);
+folderSize = length(desiredFiles);
+
+% Location of Scrapper Output
+outputFolder = 'D:\ProcessedEEG';
+if ~isfolder(outputFolder)
+    mkdir(outputFolder);
+end
+
+% Main Loop
+for i = 1:folderSize
+    % Retrieve all desired files and folders
+    fileNames = desiredFiles(i).name;
+    folderNames = desiredFiles(i).folder;
+    fullFileName = fullfile(folderNames, fileNames);
+    fprintf(1, 'Now processing %s\n', fullFileName);    
+
+    % Check Channel Availability
+    documentInfo = edfinfo(fullFileName);
+    availableSignals = documentInfo.SignalLabels;
+    isAvailable = ismember(nodeList, availableSignals);
+
+    if ~all(isAvailable)
+        fprintf('Missing Channels in %s:\n', fileNames);
+        disp(nodeList(~isAvailable));
+        continue;
+    end
+
+    % Extract patient ID from path
+    tokens = regexp(fullFileName, 'chb\d{2}', 'match');
+    if isempty(tokens)
+        warning('No patient ID found in: %s', fullFileName);
+        continue;
+    end
+    patientID = tokens{1};
+    excelFile = fullfile(outputFolder, [patientID '.xlsx']);
+    
+    % Read signals and resolve duplicate names
+    try
+        % Read all signals from file
+        multiChannelMatrix = edfread(fullFileName, 'AssignUniqueLabels', true);
+    
+        % Filter only the signals from nodeList
+        signalFilter = ismember(multiChannelMatrix.Properties.VariableNames, nodeList);
+        multiChannelMatrix = multiChannelMatrix(:, signalFilter);
+
+        if width(multiChannelMatrix) == 0
+            warning('No matching channels found in %s after filtering.', fileNames);
+            continue;
+        end
+    
+        % Rename duplicate variable names if needed
+        varNames = multiChannelMatrix.Properties.VariableNames;
+        [~, ia, ic] = unique(varNames, 'stable');
+    
+        if length(ia) < length(varNames)
+            for k = 1:length(varNames)
+                if sum(strcmp(varNames{k}, varNames)) > 1
+                    varNames{k} = [varNames{k} '_' num2str(k)];
+                end
+            end
+            multiChannelMatrix.Properties.VariableNames = varNames;
+        end
+    catch ME
+        warning("Failed to read %s: %s", fileNames, ME.message);
+        continue;
+    end
+
+    % Convert to Numerical Matrix
+    signalMatrix = table2array(multiChannelMatrix);  % Directly use numeric matrix
+
+    % Window the Signal
+    samples = 256;
+    sampleTimes = seconds((0:samples - 1) / samples);
+    numberOfWindows = floor(size(signalMatrix, 1) / samples);
+    numberOfChannels = size(signalMatrix, 2);
+    windowedEEG = zeros(samples, numberOfWindows, numberOfChannels);
+
+    % Segment signals into windows
+    for channel = 1:numberOfChannels
+        for window = 1:numberOfWindows
+            startIndex = (window - 1) * samples + 1;
+            endIndex = window * samples;
+            windowedEEG(:, window, channel) = signalMatrix(startIndex:endIndex, channel);
+        end
+    end
+
+    % Write one sheet per channel (stack all windows)
+    for channel = 1:numberOfChannels
+        if channel > numel(varNames)
+            warning('Channel index %d exceeds available variable names.', channel);
+            continue;
+        end
+    
+        nodeName = varNames{channel};
+        cleanNode = matlab.lang.makeValidName(nodeName);  % Safe name for Excel
+        
+        % Preallocate columns
+        fullAmplitude = zeros(samples * numberOfWindows, 1);
+        fullTime = seconds(zeros(samples * numberOfWindows, 1));
+        fullWindow = zeros(samples * numberOfWindows, 1);
+
+        % Stack all windows into long columns
+        for window = 1:numberOfWindows
+            startIndex = (window - 1) * samples + 1;
+            endIndex = window * samples;
+
+            fullAmplitude(startIndex:endIndex) = windowedEEG(:, window, channel);
+            fullTime(startIndex:endIndex) = sampleTimes;
+            fullWindow(startIndex:endIndex) = window;
+        end
+    
+        % Build and write timetable
+        channelTimeTable = timetable(fullTime, fullAmplitude, fullWindow, ...
+                                      'VariableNames', {'Amplitude', 'Window'});
+    
+        try
+            writetimetable(channelTimeTable, excelFile, 'Sheet', cleanNode);
+            fprintf('✓ Saved %s (Channel: %s)\n', excelFile, cleanNode);
+        catch writeErr
+            warning("Failed to write sheet %s: %s", cleanNode, writeErr.message);
+        end
+    end
+end
+
+% Check if Files were Processed Properly
+fprintf('\nFinished processing all files.\n');
+excelFiles = dir(fullfile(outputFolder, '*.xlsx'));
+fprintf('Total Excel files created: %d\n', numel(excelFiles));
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
