@@ -1,7 +1,7 @@
 This repo stores MATLAB, Verilog, and C/C++ code for a MIoT Senior Design Project.
 Associated Repos: [Need to include]
 ______________________________
-MATLAB
+MATLAB (In Progress)
 ______________________________
 Immediate Plans:
 MATLAB code provided will cover programs needed to collect data from a seizure database, 
@@ -15,7 +15,7 @@ The inclusion of EEG data when a user is completing a simple exercise will be us
 as a way to gather baseline data to differentiate between normal signals and false positives.
 
 ______________________________
-Verilog
+Verilog (Haven't Started)
 ______________________________
 Immediate Plans:
 A 256-point FFT will be created through hardware by employing a Hardware Description 
@@ -26,7 +26,7 @@ Future Plans:
 N/A
 
 ______________________________
-C/C++
+C/C++ (In Progress)
 ______________________________
 Immediate Plans: [Need to include]
 
