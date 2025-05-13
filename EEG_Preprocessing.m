@@ -140,8 +140,8 @@ for file = 1:folderSize
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Calculate Total Windows and Channels
     samples = 256;
-    sampleTiming = 1 / samples;
-    numberOfWindows = floor(length(singleMatrix) * sampleTiming);
+    samplePeriod = 1 / samples;
+    numberOfWindows = floor(length(singleMatrix) * samplePeriod);
     numberOfChannels = width(singleMatrix);
 
     % Truncate the Single Matrix
