@@ -6,7 +6,7 @@
 % Professor: Dr. Hanqi Zhuang
 % Sponsor: Dr. Sree Ranjani Rajendran
 % Database: CHB-MIT Scalp EEG Database
-% GitHub Repository Link: [Need to Complete]
+% GitHub Repository Link: https://github.com/LosSantosDeDomingo/NeuroHealth-DSP-ML
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % References
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -18,10 +18,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The purpose of this program is to collect and preprocess all the 
 % files that can be found within the CHB-MIT Scalp EEG Database.
-% Each respective file will be checked for desired EEG Channels
+% Each respective file will be checked for the desired EEG Channels
 % (or nodes), once confirmed, each file will be turned from a 
-% time table to a numerical matrix. After the conversion, the matrix
-% will the will be vectorized to allow for a 3D matrix before
+% timetable to a numerical matrix. After the conversion, the matrix
+% will be vectorized to allow for a 3D matrix before
 % saving and exporting to an output folder as a .mat file.
 %
 % An additional method was provided for the creation of the 3D matrix
@@ -34,9 +34,12 @@
 %
 % Possible Improvements for Later Version:
 % -----------------------------------------
-% Create more error-handling functions
-% Check how to remove the unique name warning
-% Figure out other methods to make the 3D matrix run faster
+% (1) Create more error-handling functions
+% (2) Check how to remove the unique name warning
+% (3) Figure out other methods to make the 3D matrix run faster
+% (4) Sort through each file association and output them
+%     into their respective folders after preprocessing 
+%     is completed.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
