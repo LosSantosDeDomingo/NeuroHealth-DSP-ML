@@ -37,15 +37,12 @@
 % (1) Create more error-handling functions
 % (2) Check how to remove the unique name warning
 % (3) Figure out other methods to make the 3D matrix run faster
-% (4) Sort through each file association and output them
-%     into their respective folders after preprocessing 
-%     is completed.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version: 1
 % Data Created: 04/26/2025
-% Last Revision: 05/12/2025
+% Last Revision: 05/15/2025
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Clear Workspace, Command Window, and Figures 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -85,11 +82,19 @@ folderSize = length(desiredFiles);
 fprintf('Total number of .edf files located within the folder: %d\n', folderSize);
 
 % Output Folder
-outputFolder = 'D:\ProcessedEEG';
-if ~isfolder(outputFolder)
-    mkdir(outputFolder);
+outputFolders = {'D:\ProcessedEEG', 'D:\ProcessedSeizureEEG'};
+numberOfOutputFolders = length(outputFolders);
+
+fprintf('Locating Output Folders...\n');
+for outputSeizureFolder = 1:numberOfOutputFolders
+    currentFolder = outputFolders{outputSeizureFolder};
+    if ~isfolder(currentFolder)
+        mkdir(currentFolder);
+    end
+    fprintf('The %s folder was found...\n', currentFolder);
 end
 
+fprintf('\nBegin Processing All EDF Files...\n');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 2 Folder Looping
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -140,8 +145,8 @@ for file = 1:folderSize
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Calculate Total Windows and Channels
     samples = 256;
-    samplePeriod = 1 / samples;
-    numberOfWindows = floor(length(singleMatrix) * samplePeriod);
+    sampleTiming = 1 / samples;
+    numberOfWindows = floor(length(singleMatrix) * sampleTiming);
     numberOfChannels = width(singleMatrix);
 
     % Truncate the Single Matrix
@@ -149,10 +154,10 @@ for file = 1:folderSize
     singleMatrix = singleMatrix(1:usableSamples, :);
 
     % Create Matrix
-    windowedEEG = zeros(samples, numberOfChannels, numberOfWindows);
+    windowedEEG = zeros(numberOfChannels, samples, numberOfWindows);
     
     % Vectorize
-    windowedEEG(:,:,:) = permute(reshape(singleMatrix', samples, numberOfWindows, numberOfChannels), [1 3 2]);
+    windowedEEG(:,:,:) = permute(reshape(singleMatrix, samples, numberOfWindows, numberOfChannels), [3 1 2]);
 
     % Alternative Method | Sliding Window
     % Nest For Loop to Fill-in Matrix
@@ -167,18 +172,28 @@ for file = 1:folderSize
 %            windowedEEG(:, window, channel) = singleMatrix(signalInterval, channel);
  %       end
  %   end
-
-    % Display When File is Completed
-    % fprintf('%s has been processed, moving on to the next file...\n\n\n', fileNames);    
-
+  
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Stage 2.4 File Saving
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-    % Save Results as a .mat File
-    fixedFileName = replace(fileNames, '.edf', '.mat');
-    save(['D:\ProcessedEEG\' fixedFileName], "windowedEEG");
-    fprintf('Window was successfully stored, moving to next file...\n\n\n')
-    
+    % Build expected path to the .edf.seizures file
+    seizurePath = [fullFileName, '.seizures'];
+
+    % Check if the corresponding .seizures file exists
+    if isfile(seizurePath)
+        % Save Results as a .mat File
+        fixedFileName = replace(fileNames, '.edf', '.mat');
+        save(['D:\ProcessedSeizureEEG\' fixedFileName], "windowedEEG");
+        fprintf('Window was successfully stored, moving to next file...\n')
+    else
+        % Save Results as a .mat File
+        fixedFileName = replace(fileNames, '.edf', '.mat');
+        save(['D:\ProcessedEEG\' fixedFileName], "windowedEEG");
+        fprintf('Window was successfully stored, moving to next file...\n')
+    end
+
+    % Display When File is Completed
+    fprintf('%s has been processed, moving on to the next file...\n\n\n', fileNames);  
 end
 
 % Display When Preprocessing Has Been Completed
