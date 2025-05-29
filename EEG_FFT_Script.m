@@ -11,9 +11,9 @@
 % References
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % (1) Research Paper "Design and Implementation of a RISC-V SoC for Real-Time Epilepsy
-% Detection on FPGA" by Jiangwei He and Co.
+%                     Detection on FPGA" by Jiangwei He and Co.
 % (2) https://www.ncbi.nlm.nih.gov/books/NBK539805/
-%
+% (3) https://www.mathworks.com/help/
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Purpose of Program
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -28,16 +28,13 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Immediate Improvements for Current Version:
 % --------------------------------------------
-% (1) Remove signal reconstruction (Not needed I lost track trying to teach myself)
-% (2) Fix dominant frequency portion to check for band frequencies
-% (3) Check the total power of all bands
-% (4) Prepare final matrix and labels
-% (5) Save to external hard drive files
-% (6) Repeat but for seizure data
+% (1) Prepare final matrix and labels
+% (2) Save to external hard drive files
+% (3) Repeat but for seizure data
 % 
 % Possible Improvements for Later Version:
 % -----------------------------------------
-%
+% (1) Assign band ranges to exact frequencies logically
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -53,6 +50,13 @@ close all; % Close all figures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 1: Locate Signal Folders (.mat files)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Desired Node List
+desiredNodes = {'FP1-F7', 'F7-T7', 'T7-P7', 'P7-O1', 'FP1-F3', 'F3-C3', 'C3-P3', ... 
+                'P3-O1', 'FP2-F4', 'F4-C4', 'C4-P4', 'P4-O2','FP2-F8', 'F8-T8', ...
+                'T8-P8', 'P8-O2', 'FZ-CZ', 'CZ-PZ','P7-T7', 'T7-FT9', 'FT9-FT10', ...
+                'FT10-T8', 'T8-P8'};
+totalNodes = length(desiredNodes);
+
 % Preprocessed Signal Locations
 signalFolders = {'D:\ProcessedEEG', 'D:\ProcessedSeizureEEG'};
 numberOfFolders = length(signalFolders);
@@ -136,13 +140,6 @@ for file = 1:1 %folderSize
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Stage 2.2: Filter Design
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
-    % Alpha waves (8-12 Hz):
-    % Beta waves (12-30 Hz):
-    % Theta waves (4-8 Hz):
-    % Delta waves (0.5-4 Hz):
-    % Gamma waves (30+ Hz):
-    % Desired Frequency Range 0.5 Hz - 70 Hz
-
     % Calculate Signal Details 
     samplingFrequency = 256; % Should be the same as the number of samples
     samplingPeriod = 1 / samplingFrequency;
@@ -166,8 +163,13 @@ for file = 1:1 %folderSize
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Stage 2.3: Perform FFT
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%   
-    for window = 1:1 %numberOfWindows
-        for channel = 1:1 %numberOfChannels
+    % Perallocate Matrix
+    numberOfBands = 5;
+    totalRowVectors = numberOfBands * numberOfChannels;
+    windowedEEG_relativePower = zeros(numberOfWindows, totalRowVectors);
+    
+    for window = 1:numberOfWindows
+        for channel = 1:numberOfChannels
             % Apply Filter
             currentWindow = windowedEEG(channel, :, window)';
             appliedFilterCoefficients = fftfilt(filterCoefficients, currentWindow);
@@ -179,143 +181,165 @@ for file = 1:1 %folderSize
             normalizedFFTCoefficients = samplingPeriod * fftCoefficients;
 
             % Amplitude and Phase Spectrum
-            amplitudeSpectrum = abs(normalizedFFTCoefficients);
-            phaseAngleSpectrum = angle(normalizedFFTCoefficients);
+            %amplitudeSpectrum = abs(normalizedFFTCoefficients);
+            %phaseAngleSpectrum = angle(normalizedFFTCoefficients);
 
             % Graphing (Made for Testing)
-            lineWidth = 1;
-            figure(1)
-            subplot(2,2,1)
-            stem(frequency', amplitudeSpectrum, '*', 'LineWidth', lineWidth), xlabel('Frequency (Hz)'), ylabel('Amplitude'), grid on
-            subplot(2,2,2)
-            stem(frequency', phaseAngleSpectrum, '*', 'LineWidth', lineWidth), xlabel('Frequency (Hz)'), ylabel('Phase Angle'), grid on            
+            %lineWidth = 1;
+            %figure(1)
+            %subplot(2,2,1)
+            %stem(frequency', amplitudeSpectrum, '*', 'LineWidth', lineWidth), xlabel('Frequency (Hz)'), ylabel('Amplitude'), grid on
+            %subplot(2,2,2)
+            %stem(frequency', phaseAngleSpectrum, '*', 'LineWidth', lineWidth), xlabel('Frequency (Hz)'), ylabel('Phase Angle'), grid on            
 
             % FFT Table (Made for Testing)
-            signalTable = table(normalizedFFTCoefficients, frequency', amplitudeSpectrum, phaseAngleSpectrum);
-            signalTable.Properties.VariableNames = {'FFT Coefficients', 'Frequency', 'Amplitude', 'Phase'};
-            disp(signalTable);
+            % signalTable = table(normalizedFFTCoefficients, frequency', amplitudeSpectrum, phaseAngleSpectrum);
+            % signalTable.Properties.VariableNames = {'FFT Coefficients', 'Frequency', 'Amplitude', 'Phase'};
+            % disp(signalTable);
 
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Stage 2.4: Signal Reconstruction
+            % Stage 2.4: Locating EEG Frequency Bands
+            % (Hardcoded everything because I already knew everything was
+            % 256, this won't work for a sampling  rate above or below 256.)
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-            % Remove Complex Conjugates and the Noise Floor
-            nyquistRange = ceil(numberOfSamples / 3.5) + 1;
-            desiredAmplitudes = amplitudeSpectrum(1:nyquistRange);
-            desiredLocations = frequency(1:nyquistRange)';
-            desiredPhase = phaseAngleSpectrum(1:nyquistRange);
+            % Alpha waves (8-12 Hz): Bins 10 - 13
+            % Beta waves (12-30 Hz): Bins 14 - 31
+            % Theta waves (4-8 Hz): Bins 6 - 9
+            % Delta waves (0.5-4 Hz): Bins 2 - 5
+            % Gamma waves (30+ Hz): Bins 32 - 71
+            % Desired Frequency Range 1 Hz - 70 Hz
             
-            % Plot (For Testing)
-            subplot(2,2,3)
-            stem(desiredLocations, desiredAmplitudes, '*', 'LineWidth', lineWidth), xlabel('Frequency (Hz)'), ylabel('Amplitude'), grid on
+            % Create Matrix for Bands
+            deltaBand = zeros(4, 1);
+            thetaBand = zeros(4, 1);
+            alphaBand = zeros(4, 1);
+            betaBand = zeros(18, 1);
+            gammaBand = zeros(40, 1);
 
-            % Find Local Maxima
-            relativeThreshold = 0.01;
-            prominenceThreshold = relativeThreshold * max(desiredAmplitudes);
-            [peaks, locations, widths, prominence] = findpeaks(desiredAmplitudes, 'MinPeakProminence', prominenceThreshold);
-            
-            % Set Dominant Frequencies
-            numberOfPeaks = length(peaks);
-            k = 15;
+            % Band Lengths
+            threeBandLength = length(deltaBand);
+            betaBandLength = length(betaBand);
+            gammaBandLength = length(gammaBand);
 
-            if numberOfPeaks < k
-                % Create Padding
-                paddedAmplitudes = zeros(k, 1);
-                paddedFrequencies = zeros(k, 1);
-                paddedPhase = zeros(k, 1);
-
-                % Pad the remaining space with zeros
-                paddedFrequencies(1:numberOfPeaks) = desiredLocations(locations);
-                paddedAmplitudes(1:numberOfPeaks) = peaks;
-                paddedPhase(1:numberOfPeaks) = desiredPhase(locations);
-
-                % Maintain Values
-                dominantFrequencies = paddedFrequencies;
-                dominantAmplitudes = paddedAmplitudes;
-                dominantPhases = paddedPhase;
-            else     
-                % Create score
-                score = peaks .* prominence;
-                [~, sortedIndex] = sort(score, 'descend');
-                topK = sortedIndex(1:k);
-                
-                % Truncate signal
-                truncatedFrequencies = desiredLocations(locations(topK));
-                truncatedPhase = desiredPhase(locations(topK));
-                truncatedAmplitudes = peaks(topK);
-
-                [~, sortIndex] = sort(truncatedFrequencies, 'ascend');
-                
-                % Maintain Values
-                dominantFrequencies = truncatedFrequencies(sortIndex);
-                dominantAmplitudes = truncatedAmplitudes(sortIndex);
-                dominantPhases = truncatedPhase(sortIndex);
-            end
-
-            % Graphing (Made for Testing)
-            subplot(2,2,4)
-            stem(dominantFrequencies, dominantAmplitudes, '*', 'LineWidth', lineWidth), xlabel('Frequency (Hz)'), ylabel('Amplitude'), grid on
-            
-            % Reconstruct FFT Coefficients
-            deconstructedCoefficients = zeros(k,1);
-
-            for index = 1:k
-                deconstructedCoefficients(index) = dominantAmplitudes(index) * exp(dominantPhases(index)*i());
-            end
-            
-            % Rebuild Full Spectrum Coefficients
-            fullSpectrumCoefficients = zeros(numberOfSamples, 1);
-            
-            for sample = 1:numberOfSamples
-                for index = 1:k
-                    if sample == dominantFrequencies(index)
-                        fullSpectrumCoefficients(sample) = deconstructedCoefficients(index);
+            % Associate Bins to Bands
+            for currentCoefficient = 2:71
+                % Run Delta Band
+                for k = 1:threeBandLength
+                    if k == frequency(currentCoefficient)
+                        deltaBand(k) = normalizedFFTCoefficients(currentCoefficient);
                     end
+                end
+                    
+               % Run Theta Band
+               for k = 1:threeBandLength
+                    if k == frequency(currentCoefficient)
+                        realCoefficient = currentCoefficient + 4;
+                        thetaBand(k) = normalizedFFTCoefficients(realCoefficient);
+                    end
+               end   
+    
+               % Run Alpha Band
+               for k = 1:threeBandLength
+                    if k == frequency(currentCoefficient)
+                        realCoefficient = currentCoefficient + 8;
+                        alphaBand(k) = normalizedFFTCoefficients(realCoefficient);
+                   end
                end
-            end
-            
-            % Include Conjugates
-            reverseIndex = sort(frequency(:)+1,'descend');
-            reverseIndex = reverseIndex(1:nyquistRange);
-            
-            chosenReverse = zeros(k, 1);
-            for reverse = 1:length(reverseIndex)
-                for index = 1:k
-                    if reverse == dominantFrequencies(index)
-                        chosenReverse(index) = reverseIndex(reverse);
+
+                % Run Beta Band
+                for k = 1:betaBandLength
+                    if k == frequency(currentCoefficient)
+                        realCoefficient = currentCoefficient + 12;
+                        betaBand(k) = normalizedFFTCoefficients(realCoefficient);
                     end
                 end
-            end
-            chosenReverse = sort(chosenReverse, 'ascend');
-
-            for coefficient = 1:length(normalizedFFTCoefficients)
-                for index = 1:k
-                    if coefficient == chosenReverse(index)
-                        fullSpectrumCoefficients(coefficient) = normalizedFFTCoefficients(coefficient);
+                
+                % Run Gamma Band
+                for k = 1:gammaBandLength
+                    if k == frequency(currentCoefficient)
+                        realCoefficient = currentCoefficient + 30;
+                        gammaBand(k) = normalizedFFTCoefficients(realCoefficient);
                     end
-                end
+                end                    
             end
 
-
-            % Signal Reconstruction
-            signalRecontruction = ifft(fullSpectrumCoefficients, 'symmetric');
-
-            % Graphing (Made for Testing)
-            figure(2);
-            plot(frequency', currentWindow, 'k-*', 'LineWidth', 2)
-            hold on, grid on
-            xlabel('Frequency (Hz)'), ylabel('Amplitude')
-
-            figure(3);
-            plot(frequency', signalRecontruction, 'b--', 'LineWidth', 2)
-            hold on, grid on
-            xlabel('Frequency (Hz)'), ylabel('Amplitude')            
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            % Stage 2.5: Power Calculations
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+            % Calculate Band Power
+            avgPowerDeltaBand = mean(abs(deltaBand).^2);
+            avgPowerThetaBand = mean(abs(thetaBand).^2);
+            avgPowerAlphaBand = mean(abs(alphaBand).^2);
+            avgPowerBetaBand = mean(abs(betaBand).^2);
+            avgPowerGammaBand = mean(abs(gammaBand).^2);
             
+            % Total Power
+            totalPower = avgPowerDeltaBand + avgPowerThetaBand + avgPowerAlphaBand + avgPowerBetaBand + avgPowerGammaBand;
+
+            % Relative Band Power
+            relativePowerDelta = avgPowerDeltaBand / totalPower;
+            relativePowerTheta = avgPowerThetaBand / totalPower;
+            relativePowerAlpha = avgPowerAlphaBand / totalPower;
+            relativePowerBeta = avgPowerBetaBand / totalPower;
+            relativePowerGamma = avgPowerGammaBand / totalPower;
+
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            % Stage 2.6: Machine Learning Preparations
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%       
+            % Combine Relative Power
+            relativePowerVector = [relativePowerDelta, relativePowerTheta, relativePowerAlpha,...
+                                   relativePowerBeta, relativePowerGamma];
+            
+            % Prepare Matrix (window x (Bands x Channel))
+            % numberOfBands = width(relativePowerVector);
+            % totalRowVectors = numberOfBands * numberOfChannels;
+            currentRowVectors = numberOfBands * channel;
+            % windowedEEG_relativePower = zeros(numberOfWindows, totalRowVectors);
+            
+            % Store Power Vector in Matrix
+            startColumn = (channel - 1) * numberOfBands + 1;
+            endColumn = currentRowVectors;
+            columnInterval = startColumn:endColumn;
+            windowedEEG_relativePower(window,columnInterval) = relativePowerVector;
         end
     end
- 
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % Stage 2.7: Table Making
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+    % Column Naming
+    bandList = {'_Delta_RP', '_Theta_RP', '_Alpha_RP','_Beta_RP','_Gamma_RP'};
+    variableNames = string(zeros(1, numberOfBands));
+    removal = '.mat';
+    channelCounter = 1;
+    channelIndex = mod(channelCounter, numberOfChannels);
+
+    for tableColumn = 1:totalRowVectors
+        bandIndex = mod(tableColumn, numberOfBands);
+        if bandIndex ~= 0
+            replacement = "_" + desiredNodes(channelIndex) + bandList(bandIndex);
+            variableNames(tableColumn) = replace(fileNames, removal, replacement);
+        else
+            bandIndex = 5;
+            replacement = "_" + desiredNodes(channelIndex) + bandList(bandIndex);
+            variableNames(tableColumn) = replace(fileNames, removal, replacement);
+            channelCounter = channelCounter + 1;
+            channelIndex = mod(channelCounter, numberOfChannels);
+
+            if channelIndex == 0
+                channelIndex = 22;
+                variableNames(tableColumn) = replace(fileNames, removal, replacement);
+            end
+        end
+    end
+
+    % Row Naming
+    rowNames = "Window_" + (1:numberOfWindows)';
+
+    % Table Naming
+    windowedEEG_RP_Table = array2table(windowedEEG_relativePower, 'RowNames', rowNames, 'VariableNames', variableNames);
 
     %if folderNames == "D:\ProcessedEEG"
      %   seizureStatus = 0;
     %end 
 end
-
