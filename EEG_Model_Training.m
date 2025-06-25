@@ -36,7 +36,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version: 1
 % Data Created: 06/16/2025
-% Last Revision: 06/16/2025
+% Last Revision: 06/24/2025
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Model Code
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -87,6 +87,16 @@ function validateFile(fullFileName)
     end    
 end
 
+% Validate that output folder Exist
+function validateOutputFolder(outputFolder)
+fprintf('Locating Output Folder...\n');
+    if ~isfolder(outputFolder)
+        mkdir(outputFolder);
+    end
+fprintf('The %s folder was found...\n', outputFolder);
+
+end
+
 % Accuracy Metric
 function accuracy = calculateAccuracyMetric(yTest, yPredict)
     accuracy = sum(yPredict == yTest) / length(yTest);
@@ -97,8 +107,8 @@ function [confusionMatrix, TP, FP, TN, FN] = calculateConfusionMat(yTest, yPredi
     confusionMatrix = confusionmat(yTest, yPredict);
     TP = confusionMatrix(2,2);
     FP = confusionMatrix(1,2);
-    TN = confusionMatrix(2,1);
-    FN = confusionMatrix(1,1);
+    TN = confusionMatrix(1,1);
+    FN = confusionMatrix(2,1);
 end
 
 % Precision Metric
@@ -116,6 +126,68 @@ function f1Score = calculateF1Score(precision, recall)
     f1Score = 2 * (precision * recall) / (precision + recall);
 end
 
+% Display Metrics
+function displayMetrics(accuracy, precision, recall, f1Score)
+    fprintf("Accuracy: %.2f\n", accuracy);
+    fprintf("Precision: %.2f\n", precision);
+    fprintf("Recall: %.2f\n", recall);
+    fprintf("F1-Score: %.2f\n\n", f1Score);
+end
+
+% Calculate Class Weights
+function [trainedSVM, yPredict] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, kernelType)
+    % Display Training Status
+    fprintf('Training SVM (%s Kernel) Classifier (Weighted)...\n', upper(kernelType));
+
+    % Unique Classes
+    classLabels = unique(yTrain);
+    numClasses = numel(classLabels);
+
+    % Class Counts (Using logical indexing for speed)
+    classCounts = arrayfun(@(x) sum(yTrain == x), classLabels);
+
+    % Class Weights (Inverse frequency)
+    classWeights = sum(classCounts) ./ (numClasses * classCounts);
+
+    % Sample Weights
+    sampleWeights = arrayfun(@(x) classWeights(classLabels == x), yTrain);
+
+    % Train SVM
+    xTrainGPU = gpuArray(xTrainNorm);
+    yTrainGPU = gpuArray(yTrain);
+    sampleWeightsGPU = gpuArray(sampleWeights);
+
+    trainedSVM = fitcsvm(xTrainGPU, yTrainGPU, ...
+                         'KernelFunction', kernelType, ...
+                         'ClassNames', classLabels, ...
+                         'Weights', sampleWeightsGPU);
+
+    % Return Results to CPU
+    trainedSVM = gather(trainedSVM);
+
+    % Predict
+    yPredict = predict(trainedSVM, xTestNorm);
+end
+
+% Collect Inference Parameters
+function [bias, supportVector, alpha, labels, coefficients] = calculateParameters(model, yTrain)
+    bias = model.Bias;
+    supportVector = model.SupportVectors;
+    
+    % Coefficient Variables
+    alpha = model.Alpha;
+    labels = yTrain(model.IsSupportVector);
+    coefficients = alpha.*labels;
+end
+
+% Display Inference Parameters
+function displayParameters(bias, supportVector, alpha, labels, coefficients)
+    fprintf("Bias: %.2f\n", bias);
+    fprintf("Support Vector: %.2f\n", supportVector);
+    fprintf("Alpha: %.2f\n", alpha);
+    fprintf("Labels: %.2f\n", labels);
+    fprintf("Coefficients: %.2f\n\n", coefficients);
+end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 1: Collect Preprocessed Files (.mat files)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -141,6 +213,10 @@ validateFile(fullName);
 fprintf('Locating Input Files...\n');
 fprintf('Total number of .mat files located within the ML Preprcessing Folder: %d\n\n', baseFoldesize);
 
+% Output Folder
+outputFolder = 'D:\EEG Model Training\';
+validateOutputFolder(outputFolder);
+
 % Load File
 load(fullName);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -148,8 +224,8 @@ load(fullName);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fprintf('Model Training Has Begun...\n\n');
 % Split Dataset
-rng(42);
-cv = cvpartition(labelVector, 'HoldOut', 0.2);
+rng(42); % Ensures that data splitting is reproducible.
+cv = cvpartition(labelVector, 'HoldOut', 0.2); % Adjusts the ratio between basline and seizure
 
 xTrain = featuredRows(cv.training, :);
 yTrain = labelVector(cv.training);
@@ -173,19 +249,13 @@ fprintf('Features: %d\n\n', size(xTrainNorm,2));
 % Stage 3: Model Training
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SVM RBF
-fprintf('Training SVM RBF Classifier...\n');
-SVM_RBF = fitcsvm(xTrainNorm, yTrain,"KernelFunction", "rbf");
-yPredictSVM_RBF = predict(SVM_RBF, xTestNorm);
+[SVM_RBF, yPredictSVM_RBF] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'rbf');
 
 % SVM Polynomial
-fprintf('Training SVM Polynomial Classifier...\n');
-SVM_Poly = fitcsvm(xTrainNorm, yTrain, "KernelFunction", "polynomial");
-yPredictSVM_Poly = predict(SVM_Poly, xTestNorm);
+[SVM_Poly, yPredictSVM_Poly] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'polynomial');
 
 % SVM Sigmoid
-fprintf('Training SVM Sigmoid Classifier...\n\n');
-SVM_Sigmoid = fitcsvm(xTrainNorm, yTrain, "KernelFunction", "sigmoid");
-yPredictSVM_Sigmoid = predict(SVM_Sigmoid, xTestNorm);
+[SVM_Sigmoid, yPredictSVM_Sigmoid] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'sigmoid');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 4: Model Evaluation
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -220,26 +290,59 @@ fprintf('Displaying Training Metrics...\n');
 
 % RBF
 fprintf('SVM RBF Metrics:\n');
-fprintf("Accuracy: %d\n", accuracyMetricRBF);
-fprintf("Precision: %d\n", precisionMetricRBF);
-fprintf("Recall: %d\n", recallMetricRBF);
-fprintf("F1-Score: %d\n\n", f1MetricRBF);
+displayMetrics(accuracyMetricRBF, precisionMetricRBF, recallMetricRBF, f1MetricRBF);
 
 % Poly
 fprintf('SVM Polynomial Metrics:\n');
-fprintf("Accuracy: %d\n", accuracyMetricPoly);
-fprintf("Precision: %d\n", precisionMetricPoly);
-fprintf("Recall: %d\n", recallMetricPoly);
-fprintf("F1-Score: %d\n\n", f1MetricPoly);
+displayMetrics(accuracyMetricPoly, precisionMetricPoly, recallMetricPoly, f1MetricPoly);
 
 % Sigmoid
 fprintf('SVM Sigmoid Metrics:\n');
-fprintf("Accuracy: %d\n", accuracyMetricSigmoid);
-fprintf("Precision: %d\n", precisionMetricSigmoid);
-fprintf("Recall: %d\n", recallMetricSigmoid);
-fprintf("F1-Score: %d\n\n", f1MetricSigmoid);
+displayMetrics(accuracyMetricSigmoid, precisionMetricSigmoid, recallMetricSigmoid, f1MetricSigmoid);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 6: Save Training Results
+% Stage 6: Calculate Inference Parameter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Calculating Inference Parameters...\n');
+
+% RBF
+[bias_RBF, supportV_RBF, alpha_RBF, labels_RBF, coefficients_RBF] = calculateParameters(SVM_RBF, yTrain);
+
+% Polynomial
+[bias_Poly, supportV_Poly, alpha_Poly, labels_Poly, coefficients_Poly] = calculateParameters(SVM_Poly, yTrain);
+
+% Sigmoid
+[bias_Sig, supportV_Sig, alpha_Sig, labels_Sig, coefficients_Sig] = calculateParameters(SVM_Sigmoid, yTrain);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 7: Inference Parameter Results
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Displaying Inference Parameters Results...\n');
+
+% RBF
+fprintf('SVM RBF Inference Parameters:\n');
+displayParameters(bias_RBF, supportV_RBF, alpha_RBF, labels_RBF, coefficients_RBF);
+
+% Polynomial
+fprintf('SVM Polynomial Inference Parameters:\n');
+displayParameters(bias_Poly, supportV_Poly, alpha_Poly, labels_Poly, coefficients_Poly);
+
+% Sigmoid
+fprintf('SVM Sigmoid Inference Parameters:\n');
+displayParameters(bias_Sig, supportV_Sig, alpha_Sig, labels_Sig, coefficients_Sig);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 8: Save Inference Parameter Results
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Saving Training Results...\n')
+outputFile = 'EEG_Trained_ML_Results.mat';
+save([outputFolder outputFile], ...
+     "accuracyMetricRBF", "accuracyMetricPoly", "accuracyMetricSigmoid",...
+     "confusionMatrixRBF", "confusionMatrixPoly", "confusionMatrixSigmoid",...
+     "precisionMetricRBF", "precisionMetricPoly", "precisionMetricSigmoid",...
+     "recallMetricRBF", "recallMetricPoly", "recallMetricSigmoid",...
+     "f1MetricRBF", "f1MetricPoly", "f1MetricSigmoid",...
+     "bias_RBF", "supportV_RBF", "alpha_RBF", "labels_RBF", "coefficients_RBF",...
+     "bias_Poly", "supportV_Poly", "alpha_Poly", "labels_Poly", "coefficients_Poly",...
+     "bias_Sig", "supportV_Sig", "alpha_Sig", "labels_Sig", "coefficients_Sig");
+fprintf('Saving Completed...\n\n')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Script Has Finished...\n')
