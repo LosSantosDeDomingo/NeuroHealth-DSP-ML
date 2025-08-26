@@ -137,33 +137,41 @@ end
 % Calculate Class Weights
 function [trainedSVM, yPredict] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, kernelType)
     % Display Training Status
-    fprintf('Training SVM (%s Kernel) Classifier (Weighted)...\n', upper(kernelType));
+    fprintf('Training SVM (%s Kernel) Classifier...\n', upper(kernelType));
 
     % Unique Classes
-    classLabels = unique(yTrain);
-    numClasses = numel(classLabels);
+    % classLabels = unique(yTrain);
+    % numClasses = numel(classLabels);
 
     % Class Counts (Using logical indexing for speed)
-    classCounts = arrayfun(@(x) sum(yTrain == x), classLabels);
+    % classCounts = arrayfun(@(x) sum(yTrain == x), classLabels);
 
     % Class Weights (Inverse frequency)
-    classWeights = sum(classCounts) ./ (numClasses * classCounts);
+    % classWeights = sum(classCounts) ./ (numClasses * classCounts);
 
     % Sample Weights
-    sampleWeights = arrayfun(@(x) classWeights(classLabels == x), yTrain);
+    % sampleWeights = arrayfun(@(x) classWeights(classLabels == x), yTrain);
 
     % Train SVM
-    xTrainGPU = gpuArray(xTrainNorm);
-    yTrainGPU = gpuArray(yTrain);
-    sampleWeightsGPU = gpuArray(sampleWeights);
+    if kernelType == "sigmoid"
+        trainedSVM = fitcsvm(xTrainNorm, yTrain, ...
+                             'KernelFunction', kernelType, ...
+                             'Standardize', true,...
+                             'KernelScale', 1.0);
 
-    trainedSVM = fitcsvm(xTrainGPU, yTrainGPU, ...
-                         'KernelFunction', kernelType, ...
-                         'ClassNames', classLabels, ...
-                         'Weights', sampleWeightsGPU);
-
-    % Return Results to CPU
-    trainedSVM = gather(trainedSVM);
+    elseif kernelType == "polynomial"
+        trainedSVM = fitcsvm(xTrainNorm, yTrain, ...
+                             'KernelFunction', kernelType, ...
+                             'PolynomialOrder', 2, ...
+                             'BoxConstraint', 1, ...
+                             'Standardize', true,...
+                             'KernelScale','auto');  
+    else
+        trainedSVM = fitcsvm(xTrainNorm, yTrain, ...
+                             'KernelFunction', kernelType, ...
+                             'Standardize', true,...
+                             'KernelScale','auto');        
+    end
 
     % Predict
     yPredict = predict(trainedSVM, xTestNorm);
@@ -173,20 +181,63 @@ end
 function [bias, supportVector, alpha, labels, coefficients] = calculateParameters(model, yTrain)
     bias = model.Bias;
     supportVector = model.SupportVectors;
-    
-    % Coefficient Variables
     alpha = model.Alpha;
+
+    % Ensure yTrain is column vector
+    if isrow(yTrain)
+        yTrain = yTrain';
+    end
+
+    % Labels for support vectors
     labels = yTrain(model.IsSupportVector);
-    coefficients = alpha.*labels;
+
+    % Sanity check
+    if length(alpha) ~= length(labels)
+        warning("Alpha and label length mismatch");
+    end
+
+    % Compute coefficients
+    coefficients = alpha .* labels;
 end
 
 % Display Inference Parameters
 function displayParameters(bias, supportVector, alpha, labels, coefficients)
-    fprintf("Bias: %.2f\n", bias);
-    fprintf("Support Vector: %.2f\n", supportVector);
-    fprintf("Alpha: %.2f\n", alpha);
-    fprintf("Labels: %.2f\n", labels);
-    fprintf("Coefficients: %.2f\n\n", coefficients);
+    fprintf("Bias: %.4f\n", bias);
+    
+    % Display Support Vectors
+    numSupportVectors = size(supportVector, 1);
+    fprintf("Number of Support Vectors: %d\n", numSupportVectors);
+    
+    if numSupportVectors > 0
+        fprintf("Support Vectors (first 5 rows):\n");
+        disp(supportVector(1:min(5, numSupportVectors), :));
+    else
+        fprintf("Support Vectors: None found.\n");
+    end
+
+    % Display Alpha
+    if ~isempty(alpha)
+        fprintf("Alpha Coefficients (first 10):\n");
+        disp(alpha(1:min(10, end)));
+    else
+        fprintf("Alpha Coefficients: Empty\n");
+    end
+
+    % Display Labels
+    if ~isempty(labels)
+        fprintf("Labels of Support Vectors (first 10):\n");
+        disp(labels(1:min(10, end)));
+    else
+        fprintf("Labels of Support Vectors: Empty\n");
+    end
+
+    % Display Coefficients
+    if ~isempty(coefficients)
+        fprintf("Coefficients (first 10):\n");
+        disp(coefficients(1:min(10, end)));
+    else
+        fprintf("Coefficients: Empty\n");
+    end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 1: Collect Preprocessed Files (.mat files)
@@ -211,7 +262,7 @@ validateFile(fullName);
 
 % Display Files
 fprintf('Locating Input Files...\n');
-fprintf('Total number of .mat files located within the ML Preprcessing Folder: %d\n\n', baseFoldesize);
+fprintf('Total number of .mat files located within the ML Preprocessing Folder: %d\n\n', baseFoldesize);
 
 % Output Folder
 outputFolder = 'D:\EEG Model Training\';
@@ -223,15 +274,23 @@ load(fullName);
 % Stage 2: Data Prep
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fprintf('Model Training Has Begun...\n\n');
-% Split Dataset
+%cv = cvpartition(labelVector, 'HoldOut', 0.2); % Adjusts the ratio between basline and seizure
+
+% Preparing Train/Test Split
 rng(42); % Ensures that data splitting is reproducible.
-cv = cvpartition(labelVector, 'HoldOut', 0.2); % Adjusts the ratio between basline and seizure
+featureSize = size(featuredRows, 1);
+index = randperm(featureSize);
+splitIndex = round(0.8 * featureSize);
+trainIndex = index(1:splitIndex);
+testIndex = index(splitIndex+1:end);
 
-xTrain = featuredRows(cv.training, :);
-yTrain = labelVector(cv.training);
+% Trained Variables
+xTrain = featuredRows(trainIndex, :);
+yTrain = labelVector(trainIndex);
 
-xTest = featuredRows(cv.test, :);
-yTest = labelVector(cv.test);
+% Test Variables
+xTest = featuredRows(testIndex, :);
+yTest = labelVector(testIndex);
 
 % Normalize Dataset
 xTrainMean = mean(xTrain);
@@ -248,41 +307,58 @@ fprintf('Features: %d\n\n', size(xTrainNorm,2));
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 3: Model Training
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SVM Linear (Only used to confirm script works)
+fprintf('SVM Linear Training has begun...\n');
+[SVM_Linear, yPredictSVM_Linear] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'linear');
+fprintf('SVM Linear Training has ended...\n\n');
+
 % SVM RBF
+fprintf('SVM RBF Training has begun...\n');
 [SVM_RBF, yPredictSVM_RBF] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'rbf');
+fprintf('SVM RBF Training has ended...\n\n');
 
 % SVM Polynomial
+fprintf('SVM Polynomial Training has begun...\n');
 [SVM_Poly, yPredictSVM_Poly] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'polynomial');
+fprintf('SVM Polynomial Training has ended...\n\n');
 
 % SVM Sigmoid
-[SVM_Sigmoid, yPredictSVM_Sigmoid] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'sigmoid');
+% fprintf('SVM Sigmoid Training has begun...\n');
+% [SVM_Sigmoid, yPredictSVM_Sigmoid] = trainWeightedSVMModel(xTrainNorm, yTrain, xTestNorm, 'sigmoid');
+% fprintf('SVM Sigmoid Training has ended...\n\n');
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 4: Model Evaluation
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Accuracy Metric
+fprintf('Calculating Accuracy Metrics...\n');
 accuracyMetricRBF = calculateAccuracyMetric(yTest, yPredictSVM_RBF);
 accuracyMetricPoly = calculateAccuracyMetric(yTest, yPredictSVM_Poly);
-accuracyMetricSigmoid = calculateAccuracyMetric(yTest, yPredictSVM_Sigmoid);
+% accuracyMetricSigmoid = calculateAccuracyMetric(yTest, yPredictSVM_Sigmoid);
 
 % Confusion Matrix
+fprintf('Calculating Confusion Matrix...\n');
 [confusionMatrixRBF, rbf_TP, rbf_FP, rbf_TN, rbf_FN] = calculateConfusionMat(yTest, yPredictSVM_RBF);
 [confusionMatrixPoly, poly_TP, poly_FP, poly_TN, poly_FN] = calculateConfusionMat(yTest, yPredictSVM_Poly);
-[confusionMatrixSigmoid, sig_TP, sig_FP, sig_TN, sig_FN] = calculateConfusionMat(yTest, yPredictSVM_Sigmoid);
+% [confusionMatrixSigmoid, sig_TP, sig_FP, sig_TN, sig_FN] = calculateConfusionMat(yTest, yPredictSVM_Sigmoid);
 
 % Precision Metric
+fprintf('Calculating Precision Metrics...\n');
 precisionMetricRBF = calculatePrecisionMetric(rbf_TP, rbf_FP);
 precisionMetricPoly = calculatePrecisionMetric(poly_TP, poly_FP);
-precisionMetricSigmoid = calculatePrecisionMetric(sig_TP, sig_FP);
+% precisionMetricSigmoid = calculatePrecisionMetric(sig_TP, sig_FP);
 
 % Recall Metric
+fprintf('Calculating Recall Metrics...\n');
 recallMetricRBF = calculateRecallMetric(rbf_TP, rbf_FN);
 recallMetricPoly = calculateRecallMetric(poly_TP, poly_FN);
-recallMetricSigmoid = calculateRecallMetric(sig_TP, sig_FN);
+% recallMetricSigmoid = calculateRecallMetric(sig_TP, sig_FN);
 
 % F1 Score Metric
+fprintf('Calculating F1 Score Metrics...\n\n');
 f1MetricRBF = calculateF1Score(precisionMetricRBF, recallMetricRBF);
 f1MetricPoly = calculateF1Score(precisionMetricPoly, recallMetricPoly);
-f1MetricSigmoid = calculateF1Score(precisionMetricSigmoid, recallMetricSigmoid);
+% f1MetricSigmoid = calculateF1Score(precisionMetricSigmoid, recallMetricSigmoid);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 5: Display Results
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -297,8 +373,8 @@ fprintf('SVM Polynomial Metrics:\n');
 displayMetrics(accuracyMetricPoly, precisionMetricPoly, recallMetricPoly, f1MetricPoly);
 
 % Sigmoid
-fprintf('SVM Sigmoid Metrics:\n');
-displayMetrics(accuracyMetricSigmoid, precisionMetricSigmoid, recallMetricSigmoid, f1MetricSigmoid);
+% fprintf('SVM Sigmoid Metrics:\n');
+% displayMetrics(accuracyMetricSigmoid, precisionMetricSigmoid, recallMetricSigmoid, f1MetricSigmoid);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 6: Calculate Inference Parameter
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -311,7 +387,7 @@ fprintf('Calculating Inference Parameters...\n');
 [bias_Poly, supportV_Poly, alpha_Poly, labels_Poly, coefficients_Poly] = calculateParameters(SVM_Poly, yTrain);
 
 % Sigmoid
-[bias_Sig, supportV_Sig, alpha_Sig, labels_Sig, coefficients_Sig] = calculateParameters(SVM_Sigmoid, yTrain);
+% [bias_Sig, supportV_Sig, alpha_Sig, labels_Sig, coefficients_Sig] = calculateParameters(SVM_Sigmoid, yTrain);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 7: Inference Parameter Results
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -326,22 +402,30 @@ fprintf('SVM Polynomial Inference Parameters:\n');
 displayParameters(bias_Poly, supportV_Poly, alpha_Poly, labels_Poly, coefficients_Poly);
 
 % Sigmoid
-fprintf('SVM Sigmoid Inference Parameters:\n');
-displayParameters(bias_Sig, supportV_Sig, alpha_Sig, labels_Sig, coefficients_Sig);
+% fprintf('SVM Sigmoid Inference Parameters:\n');
+% displayParameters(bias_Sig, supportV_Sig, alpha_Sig, labels_Sig, coefficients_Sig);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Stage 8: Save Inference Parameter Results
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fprintf('Saving Training Results...\n')
 outputFile = 'EEG_Trained_ML_Results.mat';
-save([outputFolder outputFile], ...
-     "accuracyMetricRBF", "accuracyMetricPoly", "accuracyMetricSigmoid",...
-     "confusionMatrixRBF", "confusionMatrixPoly", "confusionMatrixSigmoid",...
-     "precisionMetricRBF", "precisionMetricPoly", "precisionMetricSigmoid",...
-     "recallMetricRBF", "recallMetricPoly", "recallMetricSigmoid",...
-     "f1MetricRBF", "f1MetricPoly", "f1MetricSigmoid",...
+
+% Save Results of Training
+save(fullfile(outputFolder, outputFile), ...
+    "xTrainMean", "xTrainSTD", ...
+     "accuracyMetricRBF", "accuracyMetricPoly",...
+     "confusionMatrixRBF", "confusionMatrixPoly",...
+     "precisionMetricRBF", "precisionMetricPoly",...
+     "recallMetricRBF", "recallMetricPoly",...
+     "f1MetricRBF", "f1MetricPoly",...
      "bias_RBF", "supportV_RBF", "alpha_RBF", "labels_RBF", "coefficients_RBF",...
-     "bias_Poly", "supportV_Poly", "alpha_Poly", "labels_Poly", "coefficients_Poly",...
-     "bias_Sig", "supportV_Sig", "alpha_Sig", "labels_Sig", "coefficients_Sig");
+     "bias_Poly", "supportV_Poly", "alpha_Poly", "labels_Poly", "coefficients_Poly");
+
+% Save miniature polynomial SVM model for coder inference
+compactPolyModel = compact(SVM_Poly);
+outputFile2 = 'miniModelPolySVM.mat';
+saveLearnerForCoder(compactPolyModel, fullfile(outputFolder, outputFile2));
+
 fprintf('Saving Completed...\n\n')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
