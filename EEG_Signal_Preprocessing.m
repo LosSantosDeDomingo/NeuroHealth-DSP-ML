@@ -18,10 +18,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The purpose of this program is to collect and preprocess all the 
 % files that can be found within the CHB-MIT Scalp EEG Database.
-% Each respective file will be checked for the desired EEG Channels
+% Each respective file will be checked for desired EEG Channels
 % (or nodes), once confirmed, each file will be turned from a 
-% timetable to a numerical matrix. After the conversion, the matrix
-% will be vectorized to allow for a 3D matrix before
+% time table to a numerical matrix. After the conversion, the matrix
+% will the will be vectorized to allow for a 3D matrix before
 % saving and exporting to an output folder as a .mat file.
 %
 % An additional method was provided for the creation of the 3D matrix
@@ -36,13 +36,12 @@
 % -----------------------------------------
 % (1) Create more error-handling functions
 % (2) Check how to remove the unique name warning
-% (3) Figure out other methods to make the 3D matrix run faster
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version: 1
 % Data Created: 04/26/2025
-% Last Revision: 05/15/2025
+% Last Revision: 06/27/2025
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Clear Workspace, Command Window, and Figures 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -61,7 +60,7 @@ totalNodes = length(desiredNodes);
 minNodes = ceil(totalNodes / 2);
 
 % Database Location
-databaseLocation = 'D:\chb-mit-scalp-eeg-database-1.0.0\chb-mit-scalp-eeg-database-1.0.0';
+databaseLocation = 'D:\chb-mit-scalp-eeg-database-1.0.0';
 
 % Validate Location and Display
 if ~isfolder(databaseLocation)
@@ -121,11 +120,10 @@ for file = 1:folderSize
     
     % Check which requested channels are available
     isAvailable = ismember(desiredNodes, availableSignals);
-    missingNodes = cell2mat(desiredNodes(~isAvailable));
-    
-    if  lt(missingNodes, minNodes)
-        fprintf('Not a sufficient amount of nodes...\n');
-        break;
+    numAvailable = sum(isAvailable);
+    if numAvailable < minNodes
+        fprintf('Not a sufficient amount of nodes... (%d/%d)\n', numAvailable, totalNodes);
+        continue; % Use continue to skip this file, not break
     end
 
     % Display Total Number of Nodes Found / Nodes Checked
@@ -141,12 +139,11 @@ for file = 1:folderSize
     singleMatrix = cell2mat(singleMatrix);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.3: Sliding Window
+    % Stage 2.3: Vectorization/Sliding Window
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Calculate Total Windows and Channels
     samples = 256;
-    sampleTiming = 1 / samples;
-    numberOfWindows = floor(length(singleMatrix) * sampleTiming);
+    numberOfWindows = floor(length(singleMatrix) / samples);
     numberOfChannels = width(singleMatrix);
 
     % Truncate the Single Matrix
