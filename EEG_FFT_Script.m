@@ -28,13 +28,12 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Immediate Improvements for Current Version:
 % --------------------------------------------
-% (1) Prepare final matrix and labels
-% (2) Save to external hard drive files
-% (3) Repeat but for seizure data
+% (1) Include graphs to show the signal data before and after
+% (2) Save graphs to an external hardware
 % 
 % Possible Improvements for Later Version:
 % -----------------------------------------
-% (1) Assign band ranges to exact frequencies logically
+% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -109,7 +108,7 @@ fprintf('\nProcessing All Baseline EEG Signals...\n');
 % Stage 2: Folder Looping (Base Brain Signals)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Loop Through Folder
-for file = 137:folderSize
+for file = 137:folderSize % Playing around with the numbers for testing
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Stage 2.1: File Retrieval
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
@@ -242,8 +241,10 @@ for file = 137:folderSize
 
             % Relative Band Power
             if totalPower == 0
-                relativePowerDelta = 0; relativePowerTheta = 0;
-                relativePowerAlpha = 0; relativePowerBeta = 0;
+                relativePowerDelta = 0; 
+                relativePowerTheta = 0;
+                relativePowerAlpha = 0; 
+                relativePowerBeta = 0;
                 relativePowerGamma = 0;
             else
                 relativePowerDelta = avgPowerDeltaBand / totalPower;
@@ -323,7 +324,7 @@ fprintf('\nProcessing All Seizure EEG Signals...\n');
 % Loop Through Folder
 for file = 1:folderSizeSeizure
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.1: File Retrieval
+    % Stage 3.1: File Retrieval
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
     % Retrieve all desired files and folders
     seizureFileNames = desiredFilesSeizure(file).name;
@@ -350,7 +351,7 @@ for file = 1:folderSizeSeizure
     numberOfSamples = size(windowedEEG, 2); % Signal length after windowing
     numberOfWindows = size(windowedEEG, 3);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.2: Filter Design
+    % Stage 3.2: Filter Design
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
     % Calculate Signal Details 
     samplingFrequency = 256; % Should be the same as the number of samples
@@ -373,7 +374,7 @@ for file = 1:folderSizeSeizure
     filterCoefficients = fir1(filterOrder,bandpassRange,"bandpass");
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.3: Perform FFT
+    % Stage 3.3: Perform FFT
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%   
     % Perallocate Matrix
     numberOfBands = 5;
@@ -393,7 +394,7 @@ for file = 1:folderSizeSeizure
             normalizedFFTCoefficients = samplingPeriod * fftCoefficients;
 
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Stage 2.4: Locating EEG Frequency Bands
+            % Stage 3.4: Locating EEG Frequency Bands
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
             % Alpha waves (8-12 Hz): Bins 10 - 13
             % Beta waves (12-30 Hz): Bins 14 - 31
@@ -440,7 +441,7 @@ for file = 1:folderSizeSeizure
             gammaBand = normalizedFFTCoefficients(gammaIndex);
 
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Stage 2.5: Power Calculations
+            % Stage 3.5: Power Calculations
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
             % Calculate Band Power
             avgPowerDeltaBand = mean(abs(deltaBand).^2);
@@ -465,7 +466,7 @@ for file = 1:folderSizeSeizure
                 relativePowerGamma = avgPowerGammaBand / totalPower;
             end
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Stage 2.6: Machine Learning Preparations
+            % Stage 3.6: Machine Learning Preparations
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%       
             % Combine Relative Power
             relativePowerVector = [relativePowerDelta, relativePowerTheta, relativePowerAlpha,...
@@ -486,7 +487,7 @@ for file = 1:folderSizeSeizure
     end
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.7: Table Making
+    % Stage 3.7: Table Making
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
     % Column Naming
     bandList = {'_Delta_RP', '_Theta_RP', '_Alpha_RP','_Beta_RP','_Gamma_RP'};
@@ -521,7 +522,7 @@ for file = 1:folderSizeSeizure
     windowedSeizureEEG_RP_Table = array2table(windowedEEG_relativePower, 'RowNames', rowNames, 'VariableNames', variableNames);
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.8 File Saving
+    % Stage 3.8 File Saving
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
     % Save Results as a .mat File
     adjustment = "_FFT_Seizure.mat";
