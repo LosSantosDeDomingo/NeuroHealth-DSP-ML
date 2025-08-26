@@ -50,7 +50,7 @@ close all;
 % Functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Folder Validation
-function checkFolder(folder, numberOfFolders)
+function folder = checkFolder(folder, numberOfFolders)
     for inputFolder = 1:numberOfFolders
         currentFolder = folder{inputFolder};
         if ~isfolder(currentFolder)
@@ -90,7 +90,7 @@ fprintf('The %s folder was found...\n', outputFolder);
 end
 
 % Validate File
-function validateFile(fullFileName)
+function fullFileName = validateFile(fullFileName)
     if ~isfile(fullFileName)
     errorMessage = sprintf('Error: The following folder does not exist:\n%s\nPlease specify a new file.', fullFileName);
     uiwait(warndlg(errorMessage));
@@ -127,7 +127,7 @@ signalFolders = {'D:\processedSignalsFFT', 'D:\processedSeizureSignalFFT'};
 numberOfFolders = length(signalFolders);
 
 % Validate Folders Exist
-checkFolder(signalFolders, numberOfFolders);
+signalFolders = checkFolder(signalFolders, numberOfFolders);
 
 % Desired Subfolders and Files (Base Data)
 [baseFilePattern, baseDesiredFiles, baseFoldesize] = getFolderInfo(signalFolders{1});
@@ -145,7 +145,7 @@ fprintf('Total number of .mat files located within the baseline folder: %d\n', b
 fprintf('Total number of .mat files located within the seizure folder: %d\n\n', seizureFoldesize);
 
 % Output Folder
-outputFolder = 'D:\preprocessedDataset\';
+outputFolder = 'D:\ML Preprocessed Data\';
 validateOutputFolder(outputFolder);
 
 fprintf('\nGenerating A Master Table for EEG Data...\n');
@@ -169,7 +169,7 @@ for file = 1:baseFoldesize
     [baseFileName, baseFolderName, baseFullName] = fileRetrieval(baseDesiredFiles, file);
     
     % Validate File
-    validateFile(baseFullName);
+    baseFullName = validateFile(baseFullName);
 
     % Check File Name For Seizure Data
     base_seizureFlag = checkSeizures(baseFileName);
