@@ -10,6 +10,7 @@ The collected data will be processed through an FFT function and labeled before 
 Once training is completed, the unused collected data will be used to validate the functionality of the binary
 classifier.
 
+
 Plans for a Future Version:
 
 The inclusion of EEG data when a user is completing a simple exercise will be used 
@@ -23,6 +24,7 @@ Immediate Plans:
 A 256-point FFT will be created through hardware by employing a Hardware Description Language (HDL),
 Verilog. This hardware addition will act as a hardware accelerator when processing EEG data that 
 is coming in from our wearable device to our BeagleV-Fire
+
 
 Future Plans:
 
@@ -38,6 +40,7 @@ Starting with the inference model, the collected parameters from the offline tra
 inference model run on a BeagleV-Fire to run after signal data has been processed by the hardware accelerator.
 The signal injection program, on the other hand, will be used to inject the collected data from the EEG database to validate
 and demonstrate the capabilities of the device.
+
 
 Future Plans:
 
