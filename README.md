@@ -1,16 +1,15 @@
-This repo stores MATLAB, Verilog, and C/C++ code for a MIoT Senior Design Project.
+This repo stores MATLAB, Verilog, and C/C++ code for a Medical IoT Senior Design Project.
 Associated Repos: [Need to include]
 ______________________________
 MATLAB (Status: Training Model)
 ______________________________
 Immediate Plans:
-MATLAB code provided will cover programs needed to collect data from a seizure database, 
-then it will be processed through an FFT and labeled before being trained with an RBF SVM.
-The program will also be fed sample code collected from our wearable device while 
-in the testing phase to aid us in creating a predictable model of how the overall system
-should be behaving.
+The MATLAB scripts created will perform the necessary work needed to collect data from an EEG database. 
+The collected data will be processed through an FFT function and labeled before being trained with an SVM.
+Once training is completed, the unused collected data will be used to validate the functionality of the binary
+classifier.
 
-Future Plans:
+Plans for a Future Version:
 The inclusion of EEG data when a user is completing a simple exercise will be used 
 as a way to gather baseline data to differentiate between normal signals and false positives.
 
@@ -18,9 +17,9 @@ ______________________________
 Verilog (Status: Design Phase)
 ______________________________
 Immediate Plans:
-A 256-point FFT will be created through hardware by employing a Hardware Description 
-Language (HDL), Verilog. This hardware addition will act as a hardware accelerator 
-when processing EEG data that is coming in from our wearable device to our BeagleV-Fire
+A 256-point FFT will be created through hardware by employing a Hardware Description Language (HDL),
+Verilog. This hardware addition will act as a hardware accelerator when processing EEG data that 
+is coming in from our wearable device to our BeagleV-Fire
 
 Future Plans:
 N/A
@@ -28,9 +27,13 @@ N/A
 ______________________________
 C/C++ (Status: In Progress)
 ______________________________
-Immediate Plans: [Need to include]
+Immediate Plans:
+Two C-based programs will be created: an inference model and a signal injection program.
+Starting with the inference model, the collected parameters from the offline training will be used in an
+inference model run on a BeagleV-Fire to run after signal data has been processed by the hardware accelerator.
+The signal injection program, on the other hand, will be used to inject the collected data from the EEG database to validate
+and demonstrate the capabilities of the device.
 
-
-Future Plans: [Need to include]
-
+Future Plans:
+For future use, it would be ideal to create a wrapper that would allow a user to more easily control the two C programs when needed
 
