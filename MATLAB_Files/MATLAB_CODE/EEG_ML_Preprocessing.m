@@ -14,13 +14,13 @@
 %                     Detection on FPGA" by Jiangwei He and Co.
 % (2) https://www.mathworks.com/help/
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Purpose of Program
+% Purpose of EEG_Model_Training
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The purpose of this program is to train a Support Vector Machine (SVM)
 % model to classify seizure data by extracting features from EEG recorded
 % brain signals. This model can also be used to simulate the overall
 % behavior of the system's output when identifying possible seizure data.
-% The model will also be implementing Kernel functions such as a Sigmoid,
+% The model will also be implementing Kernel functions such as a Linear,
 % Polynomial, and Radial Basis Function (RBF).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Improvement Status
@@ -35,13 +35,13 @@
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version: 1
-% Data Created: 05/30/2025
-% Last Revision: 06/16/2025
+% Data Created: 06/16/2025
+% Last Revision: 10/16/2025
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Model Code
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Clear Workspace, Command Window, and Figures 
+% Clear Workspace, Command Window, and Figures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clear;
 clc;
@@ -50,17 +50,13 @@ close all;
 % Functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Folder Validation
-function folder = checkFolder(folder, numberOfFolders)
-    for inputFolder = 1:numberOfFolders
-        currentFolder = folder{inputFolder};
-        if ~isfolder(currentFolder)
-            errorMessage = sprintf('Error: The following folder does not exist:\n%s\nPlease specify a new folder.', currentFolder);
-            uiwait(warndlg(errorMessage));
-            selectedFolder = uigetdir();
-            if selectedFolder == 0
-                return;
-            end
-            folder{inputFolder} = selectedFolder;
+function checkFolder(folder)
+    if ~isfolder(folder)
+        errorMessage = sprintf('Error: The following folder does not exist:\n%s\nPlease specify a new folder.', folder);
+        uiwait(warndlg(errorMessage));
+        databaseLocation = uigetdir();
+        if databaseLocation == 0
+            return;
         end
     end
 end
@@ -79,18 +75,8 @@ function [fileName, folderName, fullName] = fileRetrieval(desiredFiles, file)
     fullName = fullfile(folderName, fileName);
 end
 
-% Validate that output folder Exist
-function validateOutputFolder(outputFolder)
-fprintf('Locating Output Folder...\n');
-    if ~isfolder(outputFolder)
-        mkdir(outputFolder);
-    end
-fprintf('The %s folder was found...\n', outputFolder);
-
-end
-
 % Validate File
-function fullFileName = validateFile(fullFileName)
+function validateFile(fullFileName)
     if ~isfile(fullFileName)
     errorMessage = sprintf('Error: The following folder does not exist:\n%s\nPlease specify a new file.', fullFileName);
     uiwait(warndlg(errorMessage));
@@ -101,167 +87,269 @@ function fullFileName = validateFile(fullFileName)
     end    
 end
 
-% Check File Name For Seizure Data
-function seizureFlag = checkSeizures(fileName)
-    seizureChecker = "Seizure";
-    seizureFlag = contains(fileName, seizureChecker);
+% Validate that output folder Exist
+function validateOutputFolder(outputFolders)
+    fprintf('Locating Output Folders...\n');
+    numberOfOutputFolders = size(outputFolders,2);
+    for folder = 1:numberOfOutputFolders
+        currentFolder = outputFolders{folder};
+        if ~isfolder(currentFolder)
+            mkdir(currentFolder);
+        end
+        fprintf('The %s folder was found...\n', currentFolder);
+    end
 end
 
-% Create Table
-function myTable = createTable(rowSize, columnSize, variableNames, rowNames)
-    myTable = table('Size', [rowSize, columnSize], 'VariableTypes', {'cell', 'double'}, ...
-                    'VariableNames', variableNames,'RowNames', rowNames);
+% Accuracy Metric
+function accuracy = calculateAccuracyMetric(yTest, yPredict)
+    accuracy = sum(yPredict == yTest) / length(yTest);
 end
+
+% Confusion Matrix
+function [confusionMatrix, TP, FP, TN, FN] = calculateConfusionMat(yTest, yPredict)
+    confusionMatrix = confusionmat(yTest, yPredict);
+    TP = confusionMatrix(2,2);
+    FP = confusionMatrix(1,2);
+    TN = confusionMatrix(1,1);
+    FN = confusionMatrix(2,1);
+end
+
+% Precision Metric
+function precision = calculatePrecisionMetric(TP, FP)
+    precision = TP / (TP + FP);
+end
+
+% Recall Metric
+function recall = calculateRecallMetric(TP, FN)
+    recall = TP / (TP + FN);
+end
+
+% F1-Score Metric
+function f1Score = calculateF1Score(precision, recall)
+    f1Score = 2 * (precision * recall) / (precision + recall);
+end
+
+% Display Metrics
+function displayMetrics(cvLoss, accuracy, precision, recall, f1Score)
+    fprintf("Cross Validation Loss: %.4f\n", cvLoss);
+    fprintf("Accuracy: %.4f\n", accuracy);
+    fprintf("Precision: %.4f\n", precision);
+    fprintf("Recall: %.4f\n", recall);
+    fprintf("F1-Score: %.4f\n\n", f1Score);
+end
+
+% Calculate Class Weights
+function [trainedSVM, yPredict] = trainSVM(xTrainNorm, yTrain, xTestNorm, kernelType)
+    % Display Training Status
+    fprintf('Training SVM (%s Kernel) Classifier...\n', upper(kernelType));
+
+    % Train SVM
+    if kernelType == "sigmoid"
+        trainedSVM = fitcsvm(xTrainNorm, yTrain, ...
+                             'KernelFunction', kernelType, ...
+                             'Standardize', false,...
+                             'KernelScale', 1.0);
+
+    elseif kernelType == "polynomial"
+        trainedSVM = fitcsvm(xTrainNorm, yTrain, ...
+                             'KernelFunction', kernelType, ...
+                             'PolynomialOrder', 2, ...
+                             'BoxConstraint', 1, ...
+                             'Standardize', false,...
+                             'KernelScale','auto');  
+    else
+        trainedSVM = fitcsvm(xTrainNorm, yTrain, ...
+                             'KernelFunction', kernelType, ...
+                             'Standardize', false,...
+                             'KernelScale','auto');        
+    end
+
+    % Predict
+    yPredict = predict(trainedSVM, xTestNorm);
+end
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 1: Locate Signal Folders (.mat files)
+% Stage 1: Collect Preprocessed Files (.mat files)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Desired Node List
-desiredNodes = {'FP1-F7', 'F7-T7', 'T7-P7', 'P7-O1', 'FP1-F3', 'F3-C3', 'C3-P3', ... 
-                'P3-O1', 'FP2-F4', 'F4-C4', 'C4-P4', 'P4-O2','FP2-F8', 'F8-T8', ...
-                'T8-P8', 'P8-O2', 'FZ-CZ', 'CZ-PZ','P7-T7', 'T7-FT9', 'FT9-FT10', ...
-                'FT10-T8', 'T8-P8'};
-totalNodes = length(desiredNodes);
+fprintf('Running Model Training Script...\n\n');
 
 % Preprocessed Signal Locations
-signalFolders = {'D:\processedSignalsFFT', 'D:\processedSeizureSignalFFT'};
-numberOfFolders = length(signalFolders);
+inputFolder = 'F:\ML Preprocessed Data';
+numberOfFolders = length(inputFolder);
 
 % Validate Folders Exist
-signalFolders = checkFolder(signalFolders, numberOfFolders);
+checkFolder(inputFolder);
 
-% Desired Subfolders and Files (Base Data)
-[baseFilePattern, baseDesiredFiles, baseFoldesize] = getFolderInfo(signalFolders{1});
+% Collect Desired Subfolders and Files
+[baseFilePattern, baseDesiredFiles, baseFoldesize] = getFolderInfo(inputFolder);
 
-% Desired Subfolders and Files (Seizure Data)
-[seizureFilePattern, seizureDesiredFiles, seizureFoldesize] = getFolderInfo(signalFolders{2});
+% Collect Desired File
+[fileName, folderName, fullName] = fileRetrieval(baseDesiredFiles, 1); % 1 Because there was only one file
 
-% Total Files
-totalFiles = baseFoldesize + seizureFoldesize;
+% Verify File
+validateFile(fullName);
 
 % Display Files
-fprintf('Running Machine Learning Model Training Script...\n\n');
 fprintf('Locating Input Files...\n');
-fprintf('Total number of .mat files located within the baseline folder: %d\n', baseFoldesize);
-fprintf('Total number of .mat files located within the seizure folder: %d\n\n', seizureFoldesize);
+fprintf('Total number of .mat files located within the ML Preprocessing Folder: %d\n\n', baseFoldesize);
 
 % Output Folder
-outputFolder = 'D:\ML Preprocessed Data\';
+outputFolder = {'F:\nomalizationParameters', 'F:\linearSVM_EEG', 'F:\RBFSVM_EEG', 'F:\polynomialSVM_EEG'};
 validateOutputFolder(outputFolder);
 
-fprintf('\nGenerating A Master Table for EEG Data...\n');
 
-% Table Naming
-variableNames = {'Data', 'SeizureStatus'};
-numberOfColumns = length(variableNames);
-rowNames = "Table_" + (1:totalFiles)';
-
-% Create Master Table
-masterTable = createTable(totalFiles, numberOfColumns, variableNames, rowNames);
+% Load File
+load(fullName);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 2: Folder Looping (Baseline Files)
+% Stage 2: Data Prep
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Loop Through Folder
-for file = 1:baseFoldesize
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.1: File Retrieval
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-    % Retrieve all desired files and folders
-    [baseFileName, baseFolderName, baseFullName] = fileRetrieval(baseDesiredFiles, file);
-    
-    % Validate File
-    baseFullName = validateFile(baseFullName);
+fprintf('\n\nModel Training Has Begun...\n\n');
 
-    % Check File Name For Seizure Data
-    base_seizureFlag = checkSeizures(baseFileName);
-    
-    % Display File Name and File Count
-    fprintf('(%d / %d) ', file, totalFiles);
-    fprintf(1, 'Now processing %s\n', baseFileName);
+% Preparing Train/Test Split
+rng(42); % Ensures that data splitting is reproducible.
+cvHold = cvpartition(labelVector, 'Holdout', 0.2);
+trainIndex  = training(cvHold);
+testIndex   = test(cvHold);
 
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.2: Table Insertion
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
-    % Load File
-    load(baseFullName); % Variable Name: windowedEEG_RP_Table (Windows X Channels)
-    
-    % Index Control
-    rowIndex = rowNames{file};
-    
-    % Check if Table is Available and Insert Data
-    masterTable.Data{rowIndex} = windowedEEG_RP_Table;
-    masterTable.SeizureStatus(rowIndex) = base_seizureFlag;
+% Trained Variables
+xTrain = featuredRows(trainIndex, :);
+yTrain = labelVector(trainIndex);
 
-end
+% Test Variables
+xTest = featuredRows(testIndex, :);
+yTest = labelVector(testIndex);
+
+% Normalize Dataset
+xTrainMean                  = mean(xTrain);
+xTrainSTD                   = std(xTrain);
+xTrainSTD(xTrainSTD == 0)   = 1;
+xTrainNorm                  = (xTrain - xTrainMean) ./ xTrainSTD;
+xTestNorm                   = (xTest - xTrainMean) ./ xTrainSTD;
+
+% Training Samples
+fprintf('Checking for Training and Testing Samples...\n');
+fprintf('Training Samples: %d\n', size(xTrain,1));
+fprintf('Testing Samples: %d\n\n', size(xTest,1));
+fprintf('Checking Amount of Features...\n');
+fprintf('Features: %d\n\n', size(xTrainNorm,2));
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 3: Model Training
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SVM Linear
+fprintf('SVM Linear Training has begun...\n');
+[SVM_Linear, yPredictSVM_Linear] = trainSVM(xTrainNorm, yTrain, xTestNorm, 'linear');
+fprintf('SVM Linear Training has ended...\n\n');
+
+% SVM RBF
+fprintf('SVM RBF Training has begun...\n');
+[SVM_RBF, yPredictSVM_RBF] = trainSVM(xTrainNorm, yTrain, xTestNorm, 'rbf');
+fprintf('SVM RBF Training has ended...\n\n');
+
+% SVM Polynomial
+fprintf('SVM Polynomial Training has begun...\n');
+[SVM_Poly, yPredictSVM_Poly] = trainSVM(xTrainNorm, yTrain, xTestNorm, 'polynomial');
+fprintf('SVM Polynomial Training has ended...\n\n');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 3: Folder Looping (Seizure Files)
+% Stage 4: Cross Validations
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-for file = 1:seizureFoldesize
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 3.1: File Retrieval
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%       
-    % Retrieve all desired files and folders
-    [seizureFileName, seizureFolderName, seizureFullName] = fileRetrieval(seizureDesiredFiles, file);
-            
-    % Validate File
-    validateFile(seizureFullName);
-        
-    % Check File Name For Seizure Data
-    seizureFlag = checkSeizures(seizureFileName);
-            
-    % Display File Name and File Count
-    realCount = file + baseFoldesize;
-    fprintf('(%d / %d) ', realCount, totalFiles);
-    fprintf(1, 'Now processing %s\n', seizureFileName);
-    
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 3.2: Table Insertion
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%          
-    % Load File
-    load(seizureFullName); % Variable Name: windowedSeizureEEG_RP_Table (Windows X Channels)
-        
-    % Index Control
-    rowIndex = rowNames{realCount};
+% Setup Cross Validation
+fprintf('Cross Validating Models...\n');
+cvKFold = cvpartition(yTrain, "KFold", 10); % 10 iterations
 
-    % Check if Table is Available and Insert Data
-    masterTable.Data{rowIndex} = windowedSeizureEEG_RP_Table;
-    masterTable.SeizureStatus(rowIndex) = seizureFlag;
+% Cross Validate Models
+cvModelLinear   = crossval(SVM_Linear, 'CVPartition', cvKFold);
+cvModelRBF      = crossval(SVM_RBF, 'CVPartition', cvKFold);
+cvModelPoly     = crossval(SVM_Poly, 'CVPartition', cvKFold);
 
-end
+% Check for loss
+cvModelLinearLoss   = kfoldLoss(cvModelLinear);
+cvModelRBFLoss      = kfoldLoss(cvModelRBF);
+cvModelPolyLoss     = kfoldLoss(cvModelPoly);
 
-fprintf('\nSuccessfully Generated Master Table...\n');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 5: Model Evaluation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Accuracy Metric
+fprintf('Calculating Accuracy Metrics...\n');
+accuracyMetricLinear    = calculateAccuracyMetric(yTest, yPredictSVM_Linear);
+accuracyMetricRBF       = calculateAccuracyMetric(yTest, yPredictSVM_RBF);
+accuracyMetricPoly      = calculateAccuracyMetric(yTest, yPredictSVM_Poly);
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 4: Flatten Dataset
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fprintf('Unifying Dataset...\n')
+% Confusion Matrix
+fprintf('Calculating Confusion Matrix...\n');
+[confusionMatrixLinear, linear_TP, linear_FP, linear_TN, linear_FN] = calculateConfusionMat(yTest, yPredictSVM_Linear);
+[confusionMatrixRBF, rbf_TP, rbf_FP, rbf_TN, rbf_FN]                = calculateConfusionMat(yTest, yPredictSVM_RBF);
+[confusionMatrixPoly, poly_TP, poly_FP, poly_TN, poly_FN]           = calculateConfusionMat(yTest, yPredictSVM_Poly);
 
-% Create Rows and Columns
-featuredRows = []; % n X 110
-labelVector = []; % n 
+% Precision Metric
+fprintf('Calculating Precision Metrics...\n');
+precisionMetricLinear   = calculatePrecisionMetric(linear_TP, linear_FP);
+precisionMetricRBF      = calculatePrecisionMetric(rbf_TP, rbf_FP);
+precisionMetricPoly     = calculatePrecisionMetric(poly_TP, poly_FP);
 
-% Loop Through Master Table
-for index = 1:totalFiles
-    fprintf('(%d / %d) Tables Processed\n', index, totalFiles);
-    % Append Rows
-    convertedArray = table2array(masterTable.Data{index});
-    featuredRows = [featuredRows; convertedArray];
+% Recall Metric
+fprintf('Calculating Recall Metrics...\n');
+recallMetricLinear  = calculateRecallMetric(linear_TP, linear_FN);
+recallMetricRBF     = calculateRecallMetric(rbf_TP, rbf_FN);
+recallMetricPoly    = calculateRecallMetric(poly_TP, poly_FN);
 
-    % Append Columns
-    matrixSize = size(convertedArray, 1);
-    Labels = repmat(masterTable.SeizureStatus(index), matrixSize, 1);
-    labelVector = [labelVector; Labels];
-end    
+% F1 Score Metric
+fprintf('Calculating F1 Score Metrics...\n\n');
+f1MetricLinear  = calculateF1Score(precisionMetricLinear, recallMetricLinear);
+f1MetricRBF     = calculateF1Score(precisionMetricRBF, recallMetricRBF);
+f1MetricPoly    = calculateF1Score(precisionMetricPoly, recallMetricPoly);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 6: Display Results
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Displaying Training Metrics...\n');
 
-fprintf('Dataset Unification Completed...\n\n')
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 5: File Saving
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fprintf('Saving Desired Variables...\n')
-outputFile = 'EEG_ML_Preprocessing.mat';
-save([outputFolder outputFile], 'featuredRows', 'labelVector',...
-     'masterTable', '-v7.3') %'-v7.3' used for variables greater than 2 GB
+% Linear
+fprintf('SVM Linear Metrics:\n');
+displayMetrics(cvModelLinearLoss, accuracyMetricLinear, precisionMetricLinear, recallMetricLinear, f1MetricLinear);
+
+% RBF
+fprintf('SVM RBF Metrics:\n');
+displayMetrics(cvModelRBFLoss, accuracyMetricRBF, precisionMetricRBF, recallMetricRBF, f1MetricRBF);
+
+% Poly
+fprintf('SVM Polynomial Metrics:\n');
+displayMetrics(cvModelPolyLoss, accuracyMetricPoly, precisionMetricPoly, recallMetricPoly, f1MetricPoly);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 7: Save Inference Parameter Results
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Saving Training Results...\n')
+
+% Save Normalization Parameters
+normalization_params = struct();
+normalization_params.xTrainMean = xTrainMean;
+normalization_params.xTrainSTD = xTrainSTD;
+save(fullfile(outputFolder{1}, 'normalization_params.mat'), 'normalization_params');
+fprintf('Saved normalization parameters\n');
+
+% Linear
+SVM_Linear            = fitPosterior(SVM_Linear, xTrainNorm, yTrain);
+compactLinearModel    = compact(SVM_Linear);
+outputFile1           = 'LinearSVM.mat';
+saveLearnerForCoder(compactLinearModel, fullfile(outputFolder{2}, outputFile1));
+fprintf('Saved Linear SVM\n');
+
+% RBF
+SVM_RBF             = fitPosterior(SVM_RBF, xTrainNorm, yTrain);
+compactPolyModel    = compact(SVM_RBF);
+outputFile2         = 'RBFSVM.mat';
+saveLearnerForCoder(compactPolyModel, fullfile(outputFolder{3}, outputFile2));
+fprintf('Saved RBF SVM\n');
+
+% Poly
+SVM_Poly            = fitPosterior(SVM_Poly, xTrainNorm, yTrain);
+compactPolyModel    = compact(SVM_Poly);
+outputFile3         = 'PolySVM.mat';
+saveLearnerForCoder(compactPolyModel, fullfile(outputFolder{4}, outputFile3));
+fprintf('Saved Polynomial SVM\n');
+
 fprintf('Saving Completed...\n\n')
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 fprintf('Script Has Finished...\n')
