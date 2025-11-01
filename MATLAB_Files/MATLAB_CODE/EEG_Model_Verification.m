@@ -30,8 +30,8 @@
 % Version Info
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Version: 1
-% Data Created: 06/24/2025
-% Last Revision: 
+% Data Created: 08/24/2025
+% Last Revision: 10/18/2025
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Model Code
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -45,7 +45,7 @@ close all;
 % Functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Folder Validation
-function checkFolder(folder, numberOfFolders)
+function folder = checkFolder(folder, numberOfFolders)
     for inputFolder = 1:numberOfFolders
         currentFolder = folder{inputFolder};
         if ~isfolder(currentFolder)
@@ -62,22 +62,22 @@ end
 
 % Retrieve Folder Information
 function [filePattern, desiredFiles, size] = getFolderInfo(inputFolder)
-    filePattern = fullfile(inputFolder, '**/*.mat');
+    filePattern  = fullfile(inputFolder, '**/*.mat');
     desiredFiles = dir(filePattern);
-    size = length(desiredFiles);
+    size         = length(desiredFiles);
 end
 
 % Retrieve all desired files and folders
 function [fileName, folderName, fullName] = fileRetrieval(desiredFiles, file)
-    fileName = desiredFiles(file).name;
+    fileName   = desiredFiles(file).name;
     folderName = desiredFiles(file).folder;
-    fullName = fullfile(folderName, fileName);
+    fullName   = fullfile(folderName, fileName);
 end
 
 % Validate File
 function validateFile(fullFileName)
     if ~isfile(fullFileName)
-    errorMessage = sprintf('Error: The following file does not exist:\n%s\nPlease specify a new file.', fullFileName);
+    errorMessage = sprintf('Error: The following folder does not exist:\n%s\nPlease specify a new file.', fullFileName);
     uiwait(warndlg(errorMessage));
     fullFileName = uigetdir();
         if fullFileName == 0
@@ -85,134 +85,254 @@ function validateFile(fullFileName)
         end
     end    
 end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 1: Collect Preprocessed Files (.mat files)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fprintf('Running Model Validity Script...\n\n');
 
-% Preprocessed Signal Locations
-signalFolders = {'D:\testingBaseFFT', 'D:\testingSeizureFFT', 'D:\modelParametersEEG', 'D:\miniModelEEG'};
+% Validate that output folder Exist
+function validateOutputFolder(outputFolder)
+fprintf('Locating Output Folder...\n');
+    if ~isfolder(outputFolder)
+        mkdir(outputFolder);
+    end
+fprintf('The %s folder was found...\n', outputFolder);
+
+end
+
+function features = extractFeatures(struct)
+    if isfield(struct, 'windowedEEG_RP_Table')
+        features = table2array(struct.windowedEEG_RP_Table);
+    elseif isfield(struct, 'windowedSeizureEEG_RP_Table')
+        features = table2array(struct.windowedSeizureEEG_RP_Table);
+    else
+        fieldNames = fieldnames(struct);
+        for i = 1:numel(fieldNames)
+            if istable(struct.(fieldNames{i}))
+                features = table2array(struct.(fieldNames{i}));
+                return;
+            end
+        end
+        error('extractFeatures:NoTable', 'No expected table variable found.');
+    end
+end
+
+function [mu, sigma, predictorOrder] = modelMeta(model)
+    % Locate Mu
+    if isprop(model,'Mu') && ~isempty(model.Mu)
+        mu = model.Mu(:).'; 
+    else 
+        mu = 0; 
+    end
+    
+    % Locate Sigma
+    if isprop(model,'Sigma') && ~isempty(model.Sigma)
+        sigma = model.Sigma(:).'; 
+    else 
+        sigma = 1; 
+    end
+    
+    % Locate Predictor Names
+    if isprop(model,'ExpandedPredictorNames') && ~isempty(model.ExpandedPredictorNames)
+        predictorOrder = string(model.ExpandedPredictorNames);
+    elseif isprop(model,'PredictorNames') && ~isempty(model.PredictorNames)
+        predictorOrder = string(model.PredictorNames);
+    else
+        predictorOrder = [];
+    end
+end
+
+function scores = modelScores(model, features, mu, sigma, predictorOrder)
+    % Normalize with guard for zero sigma
+    if numel(mu)==size(features,2) && numel(sigma)==size(features,2)
+        features = (features - mu) ./ sigma;
+        features(:, sigma==0) = 0;
+    end
+    
+    % Predict using table with names when order is known
+    if ~isempty(predictorOrder) && numel(predictorOrder)==size(features,2)
+        T = array2table(features, 'VariableNames', cellstr(predictorOrder));
+        [label, score] = predict(model, T);
+    else
+        [label, score] = predict(model, features);
+    end
+    
+    % Check for posterior
+    hasPosterior = isprop(model,'ScoreTransform') && ~isempty(model.ScoreTransform) && ~strcmpi(model.ScoreTransform,'none');
+    positiveTokens = ["1","seizure","positive","Seizure","True"];
+    
+    if hasPosterior && ~isempty(score)
+        if isprop(model,'ClassNames') && ~isempty(model.ClassNames)
+            classNames  = string(model.ClassNames);
+            hit = ismember(classNames, positiveTokens);
+            if any(hit) 
+                positiveColumn = find(hit,1,'first'); 
+            else
+                positiveColumn = min(2, size(score,2));
+            end
+        else
+            positiveColumn = min(2, size(score,2));
+        end
+        scores = score(:, min(positiveColumn, size(score,2)));
+    else
+        labels = string(label);
+        scores = double(ismember(labels, positiveTokens));
+    end
+    
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 1: Prepare Necessary Files (.mat files)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('Running Inference Model...\n\n');
+
+% Input Folders
+signalFolders = { ...
+    'F:\nomalizationParameters', 'F:\testingBaseFFT', 'F:\testingSeizureFFT', ...
+    'F:\linearSVM_EEG', 'F:\RBFSVM_EEG', 'F:\polynomialSVM_EEG'...
+    };
 numberOfFolders = length(signalFolders);
 
-% Validate Folders Exist
-checkFolder(signalFolders, numberOfFolders);
+% Validate folders (may update paths)
+signalFolders = checkFolder(signalFolders, numberOfFolders);
+
+% Output Folder
+outputFolder = 'F:\inferenceResults\';
+validateOutputFolder(outputFolder);
 
 % Desired Subfolders and Files
-[~, baseDesiredFiles, baseFoldesize] = getFolderInfo(signalFolders{1});
-[~, seizureDesiredFiles, seizureFoldesize] = getFolderInfo(signalFolders{2});
-[~, paramDesiredFiles, paramFoldesize] = getFolderInfo(signalFolders{3});
-[~, modelDesiredFiles, modelFoldesize] = getFolderInfo(signalFolders{4});
+[~, normParamDesiredFiles, ~]              = getFolderInfo(signalFolders{1});
+[~, baseDesiredFiles,    baseFoldesize]    = getFolderInfo(signalFolders{2});
+[~, seizureDesiredFiles, seizureFoldesize] = getFolderInfo(signalFolders{3});
+[~, linearModelDesiredFiles, ~]            = getFolderInfo(signalFolders{4});
+[~, rbfModelDesiredFiles,    ~]            = getFolderInfo(signalFolders{5});
+[~, polyModelDesiredFiles,   ~]            = getFolderInfo(signalFolders{6});
 
-% Total Files
-totalFiles = baseFoldesize + seizureFoldesize;
+% Retrieve Necessary Path Names
+[~, ~, normParamFullName]  = fileRetrieval(normParamDesiredFiles, 1);
+[~, ~, linearModelFullName]  = fileRetrieval(linearModelDesiredFiles, 1);
+[~, ~, rbfModelFullName]     = fileRetrieval(rbfModelDesiredFiles,    1);
+[~, ~, polyModelFullName]    = fileRetrieval(polyModelDesiredFiles,   1);
 
-% Load Files
-miniModel = loadLearnerForCoder(modelDesiredFiles);
-load(paramDesiredFiles);
-posCol = 2;
+% Load Models
+fprintf('Loading models...\n');
+linearSVM   = loadLearnerForCoder(linearModelFullName);
+rbfSVM      = loadLearnerForCoder(rbfModelFullName);
+polySVM     = loadLearnerForCoder(polyModelFullName);
 
-% Error Handling for a STD of 0
-xTrainSTD(xTrainSTD == 0) = 1;
-
-% Preallocate result vectors before the loop
-baselinePredictions = zeros(baseFoldesize, 1);
-baselineScores = zeros(baseFoldesize, 1);
-baselineTruth = zeros(baseFoldesize, 1);  % All 0 for baseline
-
-% Preallocate seizure predictions and truth
-seizurePredictions = zeros(seizureFoldesize, 1);
-seizureScores = zeros(seizureFoldesize, 1);
-seizureTruth = ones(seizureFoldesize, 1);  % Label 1 for seizure
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 2: Gather Baseline Data
+% Stage 2: Gather Parameters Data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load normalization parameters
+fprintf('Loading training normalization parameters\n');
+load(normParamFullName, "normalization_params");
+trainingMu = normalization_params.xTrainMean;
+trainingSigma = normalization_params.xTrainSTD;
+    
+fprintf('\nTraining Normalization Statistics:\n');
+fprintf('  Mean (mu) range:   [%.4e, %.4e]\n', min(trainingMu), max(trainingMu));
+fprintf('  Std (sigma) range: [%.4e, %.4e]\n', min(trainingSigma), max(trainingSigma));
+fprintf('  Number of features: %d\n\n', numel(trainingMu));
+
+% Extract predictor order
+[~, ~, predictorOrderL] = modelMeta(linearSVM);
+[~, ~, predictorOrderR] = modelMeta(rbfSVM);
+[~, ~, predictorOrderP] = modelMeta(polySVM);
+
+% Preallocate result vectors and predictions
+% Baseline
+yPredBaseLinear   = zeros(baseFoldesize,1);
+yPredBaseRBF      = zeros(baseFoldesize,1);
+yPredBasePoly     = zeros(baseFoldesize,1);
+predBaseLinear    = false(baseFoldesize,1);
+predBaseRBF       = false(baseFoldesize,1);
+predBasePoly      = false(baseFoldesize,1);
+
+% Seizure
+yPredSeizureLinear   = zeros(seizureFoldesize,1);
+yPredSeizureRBF      = zeros(seizureFoldesize,1);
+yPredSeizurePoly     = zeros(seizureFoldesize,1);
+predSeizureLinear    = false(seizureFoldesize,1);
+predSeizureRBF       = false(seizureFoldesize,1);
+predSeizurePoly      = false(seizureFoldesize,1);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Stage 3: Perform Inference on Baseline Data
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('============================================================\n');
+fprintf('BASELINE DATA INFERENCE\n');
+fprintf('============================================================\n\n');
+
 for file = 1:baseFoldesize
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.1: File Retrieval
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
-    % Retrieve all desired files and folders
-    [baseFileName, ~, baseFullName] = fileRetrieval(baseDesiredFiles, file);  
-    
-    % Validate File
+    [baseFileName, ~, baseFullName] = fileRetrieval(baseDesiredFiles, file);
     validateFile(baseFullName);
-    
-    % Display File Name and File Count
     fprintf('Baseline File (%d / %d): %s\n', file, baseFoldesize, baseFileName);
 
-    % Load Files
-    clear windowEEG_RP_Table windowedSeizureEEG_RP_Table
-    load(baseFullName); % Variable Name: windowedEEG_RP_Table (Windows X Channels)
-    featuresFFT = table2array(windowedEEG_RP_Table);
+    baseLoad = load(baseFullName);
+    featuresBaselineFFT = extractFeatures(baseLoad);
 
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 2.2: Check Performance
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%   
-    % Normalize Data
-    featuresFFT = (featuresFFT - xTrainMean) ./ xTrainSTD;
-    featuresFFT(:,xTrainSTD == 0) = 0;
-    
-    % Predict scores for all windows
-    [~, score] = predict(miniModel, featuresFFT);
-    if isempty(score), error('Model did not return scores.'); end
-    if size(score,2) < posCol, posCol = 1; end
+    % Linear
+    scoresBaseL = modelScores(linearSVM, featuresBaselineFFT, trainingMu, trainingSigma, predictorOrderL);
+    meanBaseLinear = max(0, min(1, mean(scoresBaseL, 'omitnan')));
+    yPredBaseLinear(file) = meanBaseLinear;
+    predBaseLinear(file)  = meanBaseLinear >= 0.5;
+    fprintf('  Baseline Likelihood (Linear): %.2f%%\n', 100*meanBaseLinear);
 
-    % Mean "seizure-likeness" and decision
-    meanScore = mean(score(:, posCol));
-    meanScore = max(0, min(1, meanScore));
-    baselineScores(file)      = meanScore;
-    baselinePredictions(file) = meanScore >= 0.5;
+    % RBF
+    scoresBaseR = modelScores(rbfSVM, featuresBaselineFFT, trainingMu, trainingSigma, predictorOrderR);
+    meanBaseRBF = max(0, min(1, mean(scoresBaseR, 'omitnan')));
+    yPredBaseRBF(file)    = meanBaseRBF;
+    predBaseRBF(file)     = meanBaseRBF >= 0.5;
+    fprintf('  Baseline Likelihood (RBF):    %.2f%%\n', 100*meanBaseRBF);
 
-    fprintf('Seizure Likelihood: %.2f%%\n\n', meanScore*100);
+    % Poly
+    scoresBaseP = modelScores(polySVM, featuresBaselineFFT, trainingMu, trainingSigma, predictorOrderP);
+    meanBasePoly = max(0, min(1, mean(scoresBaseP, 'omitnan')));
+    yPredBasePoly(file)   = meanBasePoly;
+    predBasePoly(file)    = meanBasePoly >= 0.5;
+    fprintf('  Baseline Likelihood (Poly):   %.2f%%\n\n', 100*meanBasePoly);
 end
-baselineAccuracy = sum(baselinePredictions == baselineTruth) / max(1, baseFoldesize);
-fprintf('Baseline Accuracy: %.2f%%\n\n', baselineAccuracy * 100);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 3: Gather Seizure Data
+% Stage 4: Perform Inference on Seizure Data
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf('============================================================\n');
+fprintf('SEIZURE DATA INFERENCE\n');
+fprintf('============================================================\n\n');
+
 for file = 1:seizureFoldesize
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 3.1: File Retrieval
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
     [seizureFileName, ~, seizureFullName] = fileRetrieval(seizureDesiredFiles, file);
     validateFile(seizureFullName);
-    
-    fprintf('Seizure File (%d / %d): %s\n', file, seizureFoldesize, seizureFileName);
+    fprintf('Seizure File  (%d / %d): %s\n', file, seizureFoldesize, seizureFileName);
 
-    % Load seizure data
-    clear windowEEG_RP_Table windowedSeizureEEG_RP_Table
-    load(seizureFullName);
-    featuresFFT = table2array(windowedSeizureEEG_RP_Table);
-    
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Stage 3.2: Check Performance
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%       
-    % Normalize Data
-    featuresFFT = (featuresFFT - xTrainMean) ./ xTrainSTD;
-    featuresFFT(:, xTrainSTD==0) = 0;
-    
-    % Predict scores for all windows
-    [~, score] = predict(miniModel, featuresFFT);
-    if isempty(score), error('Model did not return scores.'); end
-    if size(score,2) < posCol, posCol = 1; end
-   
-    % Mean "seizure-likeness" and decision
-    meanScore = mean(score(:, posCol));
-    meanScore = max(0, min(1, meanScore));
-    seizureScores(file)      = meanScore;
-    seizurePredictions(file) = meanScore >= 0.5;
+    seizureLoad = load(seizureFullName);
+    featuresSeizureFFT = extractFeatures(seizureLoad);
 
-    fprintf('Seizure Likelihood: %.2f%%\n\n', meanScore*100);
+    % Linear
+    scoresSeizureL = modelScores(linearSVM, featuresSeizureFFT, trainingMu, trainingSigma, predictorOrderL);
+    meanSeizureLinear = max(0, min(1, mean(scoresSeizureL, 'omitnan')));
+    yPredSeizureLinear(file) = meanSeizureLinear;
+    predSeizureLinear(file)  = meanSeizureLinear >= 0.5;
+    fprintf('  Seizure Likelihood (Linear): %.2f%%\n', 100*meanSeizureLinear);
+
+    % RBF
+    scoresSeizureR = modelScores(rbfSVM, featuresSeizureFFT, trainingMu, trainingSigma, predictorOrderR);
+    meanSeizureRBF = max(0, min(1, mean(scoresSeizureR, 'omitnan')));
+    yPredSeizureRBF(file)    = meanSeizureRBF;
+    predSeizureRBF(file)     = meanSeizureRBF >= 0.5;
+    fprintf('  Seizure Likelihood (RBF):    %.2f%%\n', 100*meanSeizureRBF);
+
+    % Poly
+    scoresSeizureP = modelScores(polySVM, featuresSeizureFFT, trainingMu, trainingSigma, predictorOrderP);
+    meanSeizurePoly = max(0, min(1, mean(scoresSeizureP, 'omitnan')));
+    yPredSeizurePoly(file)   = meanSeizurePoly;
+    predSeizurePoly(file)    = meanSeizurePoly >= 0.5;
+    fprintf('  Seizure Likelihood (Poly):   %.2f%%\n\n', 100*meanSeizurePoly);
 end
-seizureAccuracy = sum(seizurePredictions == seizureTruth) / max(1, seizureFoldesize);
-fprintf('Seizure Accuracy: %.2f%%\n', (100 * seizureAccuracy));
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Stage 4: Final Accuracy and Summary
+% Stage 5: Save Results
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-allPredictions = [baselinePredictions; seizurePredictions];
-allTruth = [baselineTruth; seizureTruth];
-overallAccuracy = sum(allPredictions == allTruth) / max(1, numel(allTruth));
-fprintf('Overall Accuracy: %.2f%%\n\n', (100 * overallAccuracy));
-
+fprintf('Saving Desired Variables...\n')
+outputFile = 'inferenceVariables.mat';
+save([outputFolder, outputFile], ...
+     'meanBaseLinear', 'meanBaseRBF', 'meanBasePoly',...
+     'meanSeizureLinear', 'meanSeizureRBF', 'meanSeizurePoly')
+fprintf('Saving Completed...\n\n')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fprintf('Script Has Finished...\n');
