@@ -108,7 +108,7 @@ fprintf('\nProcessing All Baseline EEG Signals...\n');
 % Stage 2: Folder Looping (Base Brain Signals)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Loop Through Folder
-for file = 137:folderSize % Playing around with the numbers for testing
+for file = 1:folderSize % Playing around with the numbers for testing
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     % Stage 2.1: File Retrieval
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
