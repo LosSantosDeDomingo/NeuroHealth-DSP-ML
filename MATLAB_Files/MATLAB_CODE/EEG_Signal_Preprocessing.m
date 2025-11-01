@@ -1,3 +1,4 @@
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Background Information
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -60,7 +61,7 @@ totalNodes = length(desiredNodes);
 minNodes = ceil(totalNodes / 2);
 
 % Database Location
-databaseLocation = 'D:\chb-mit-scalp-eeg-database-1.0.0';
+databaseLocation = 'F:\chb-mit-scalp-eeg-database-1.0.0';
 
 % Validate Location and Display
 if ~isfolder(databaseLocation)
@@ -81,7 +82,7 @@ folderSize = length(desiredFiles);
 fprintf('Total number of .edf files located within the folder: %d\n', folderSize);
 
 % Output Folder
-outputFolders = {'D:\ProcessedEEG', 'D:\ProcessedSeizureEEG'};
+outputFolders = {'F:\ProcessedEEG', 'F:\ProcessedSeizureEEG'};
 numberOfOutputFolders = length(outputFolders);
 
 fprintf('Locating Output Folders...\n');
@@ -180,12 +181,12 @@ for file = 1:folderSize
     if isfile(seizurePath)
         % Save Results as a .mat File
         fixedFileName = replace(fileNames, '.edf', '.mat');
-        save(['D:\ProcessedSeizureEEG\' fixedFileName], "windowedEEG");
+        save(['F:\ProcessedSeizureEEG\' fixedFileName], "windowedEEG");
         fprintf('Window was successfully stored, moving to next file...\n')
     else
         % Save Results as a .mat File
         fixedFileName = replace(fileNames, '.edf', '.mat');
-        save(['D:\ProcessedEEG\' fixedFileName], "windowedEEG");
+        save(['F:\ProcessedEEG\' fixedFileName], "windowedEEG");
         fprintf('Window was successfully stored, moving to next file...\n')
     end
 
