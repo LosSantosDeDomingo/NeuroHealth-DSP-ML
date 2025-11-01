@@ -1,23 +1,19 @@
 This repo stores MATLAB, Verilog, and C/C++ code for a Medical IoT Senior Design Project.
-Associated Repos: [Need to include]
 ______________________________
-MATLAB (Status: Training Model)
+MATLAB (Status: Finished)
 ______________________________
 Immediate Plans:
 
 The MATLAB scripts created will perform the necessary work needed to collect data from an EEG database. 
 The collected data will be processed through an FFT function and labeled before being trained with an SVM.
-Once training is completed, the unused collected data will be used to validate the functionality of the binary
-classifier.
+Once training is completed, the unused collected data will be used to validate the functionality of the binary classifier.
 
 
 Plans for a Future Version:
-
-The inclusion of EEG data when a user is completing a simple exercise will be used 
-as a way to gather baseline data to differentiate between normal signals and false positives.
+N/A
 
 ______________________________
-Verilog (Status: Design Phase)
+Verilog (Status: Canceled)
 ______________________________
 Immediate Plans:
 
@@ -31,7 +27,7 @@ Future Plans:
 N/A
 
 ______________________________
-C/C++ (Status: In Progress)
+C/C++ (Status: Canceled)
 ______________________________
 Immediate Plans:
 
